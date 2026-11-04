@@ -1,0 +1,10 @@
+[Unit]
+Description=Um lote de commits por dia (Contador de Dias)
+
+[Timer]
+OnCalendar=*-*-* 10:00:00
+# se o notebook estava desligado às 10h, envia quando ligar
+Persistent=true
+
+[Install]
+WantedBy=timers.target

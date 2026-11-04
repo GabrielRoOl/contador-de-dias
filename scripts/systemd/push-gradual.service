@@ -1,0 +1,8 @@
+[Unit]
+Description=Envia o próximo lote de commits do Contador de Dias ao GitHub
+
+[Service]
+Type=oneshot
+ExecStart=%h/Documentos/gabriel/programas/contador-de-dias/scripts/push-gradual.sh
+# sem agente de ssh na sessão do systemd: a chave sem senha do usuário é usada direto
+Environment=GIT_SSH_COMMAND=ssh\x20-o\x20BatchMode=yes\x20-o\x20IdentitiesOnly=yes\x20-i\x20%h/.ssh/id_ed25519
