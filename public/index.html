@@ -10,34 +10,61 @@
 <meta name="theme-color" content="#E8EDF2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E161B" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="app.css">
+</script>
 </head>
 <body>
 <main class="wrap">
   <header class="top">
     <div>
       <h1>Contagem de Dias</h1>
-      <p>Há quanto tempo você parou de fazer algo.</p>
+      <p>Parar de algo ou manter um hábito, um dia de cada vez.</p>
     </div>
-    <button class="btn primary" id="toggle-form" type="button" aria-expanded="false" aria-controls="new-form">Nova contagem</button>
+    <div class="top-actions">
+      <button class="btn" id="toggle-ajustes" type="button" aria-expanded="false" aria-controls="ajustes">Ajustes</button>
+      <button class="btn primary" id="toggle-form" type="button" aria-expanded="false" aria-controls="new-form">Nova contagem</button>
+    </div>
   </header>
+
+  <section class="panel form" id="ajustes" hidden aria-label="Ajustes">
+    <h2>Ajustes</h2>
+    <div class="field">
+      <label for="a-hora">Horário do resumo diário</label>
+      <input id="a-hora" type="time">
+    </div>
+    <p class="hint" id="a-fuso"></p>
+    <p class="hint">O aviso diário passa a chegar quando as notificações forem ativadas, em uma próxima etapa.</p>
+  </section>
 
   <form class="panel form" id="new-form" hidden novalidate>
     <h2>Nova contagem</h2>
+    <fieldset class="seg">
+      <legend class="sr">Tipo de contagem</legend>
+      <label><input type="radio" name="f-tipo" value="parar" checked><span>Parei de fazer</span></label>
+      <label><input type="radio" name="f-tipo" value="manter"><span>Mantenho um hábito</span></label>
+    </fieldset>
     <div class="field">
-      <label for="f-name">O que você parou de fazer</label>
+      <label for="f-name" id="f-name-label">O que você parou de fazer</label>
       <input id="f-name" type="text" maxlength="60" placeholder="Ex.: refrigerante, cigarro, redes sociais" autocomplete="off">
     </div>
-    <div class="row2">
-      <div class="field">
-        <label for="f-date">Data de início</label>
-        <input id="f-date" type="date">
+    <div data-so="parar">
+      <div class="row2">
+        <div class="field">
+          <label for="f-date">Data de início</label>
+          <input id="f-date" type="date">
+        </div>
+        <div class="field">
+          <label for="f-time">Hora</label>
+          <input id="f-time" type="time">
+        </div>
       </div>
-      <div class="field">
-        <label for="f-time">Hora</label>
-        <input id="f-time" type="time">
-      </div>
+      <p class="hint">Pode ser uma data que já passou. A contagem começa a partir dela.</p>
     </div>
-    <p class="hint">Pode ser uma data que já passou. A contagem começa a partir dela.</p>
+    <div class="field" data-so="parar">
+      <label for="f-custo">Quanto isso custava por dia (opcional)</label>
+      <input id="f-custo" type="text" inputmode="decimal" placeholder="Ex.: 6,50" autocomplete="off">
+      <p class="hint">Com o valor, o app mostra quanto você já economizou.</p>
+    </div>
+    <p class="hint" data-so="manter" hidden>Você marca &ldquo;Hoje eu fiz&rdquo; todo dia. Pular um dia recomeça a sequência.</p>
     <p class="error" id="f-error" role="alert"></p>
     <button class="btn primary" type="submit">Iniciar contagem</button>
   </form>
@@ -47,6 +74,7 @@
 </main>
 
 <script src="logica.js"></script>
+<script src="textos.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

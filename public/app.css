@@ -10,7 +10,7 @@ img { max-width: 100%; }
 [hidden] { display: none !important; }
 
 /* Layout: one narrow column. Header, a collapsible "nova contagem" form, then a stack of counter cards.
-   Each card pairs an odometer-style day count with a track of milestones (1, 3, 7 ... 365 dias). */
+   Each card pairs an odometer-style day count with three cycle rings (semana, mês, ano). */
 :root {
   --bg: #E8EDF2;
   --surface: #F6F8FA;
@@ -58,6 +58,8 @@ button, input { font: inherit; color: inherit; }
   letter-spacing: 0.02em; text-transform: uppercase; line-height: 1; text-wrap: balance;
 }
 .top p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+.top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .btn {
   min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line);
@@ -66,6 +68,8 @@ button, input { font: inherit; color: inherit; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.small { min-height: 40px; padding: 0 12px; font-size: 14px; font-weight: 500; }
 .btn.danger { color: var(--danger); }
+.btn.big { min-height: 56px; font-size: 18px; width: 100%; }
+.btn[aria-pressed="true"] { background: transparent; }
 
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
 .form { display: flex; flex-direction: column; gap: 14px; }
@@ -76,6 +80,18 @@ button, input { font: inherit; color: inherit; }
   min-height: 46px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--bg); width: 100%; min-width: 0; font-size: 16px;
 }
+.seg { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg label { position: relative; }
+.seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.seg span { display: flex; align-items: center; justify-content: center; text-align: center; min-height: 48px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; font-weight: 600; font-size: 15px; }
+.seg input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.radios { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.radios label { position: relative; }
+.radios input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.radios span { display: flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; }
+.radios input:checked + span { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+.radios input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 340px) { .row2 { grid-template-columns: 1fr; } }
 .hint { margin: 0; font-size: 13px; color: var(--muted); }
@@ -93,28 +109,51 @@ button, input { font: inherit; color: inherit; }
   color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px;
 }
 
-.live { display: flex; flex-direction: column; gap: 12px; }
-.count { display: flex; align-items: baseline; gap: 10px; }
+.live { display: flex; flex-direction: column; gap: 14px; }
+.aneis { position: relative; width: min(100%, 280px); aspect-ratio: 1; margin-inline: auto; }
+.aneis svg { width: 100%; height: 100%; display: block; }
+.trilho, .arco { fill: none; stroke-width: 10; }
+.trilho { stroke: var(--track); }
+.arco { stroke-linecap: round; }
+.arco.r-semana { stroke: var(--accent); }
+.arco.r-mes { stroke: var(--accent); opacity: 0.7; }
+.arco.r-ano { stroke: var(--accent); opacity: 0.45; }
+@media (prefers-reduced-motion: no-preference) { .arco { transition: stroke-dasharray 0.6s ease; } }
+.centro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 16%; }
 .num {
-  font-family: var(--font-display); font-weight: 800; font-size: clamp(88px, 28vw, 128px);
+  font-family: var(--font-display); font-weight: 800; font-size: 92px;
   line-height: 0.85; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; color: var(--accent);
 }
-.unit { font-family: var(--font-display); font-weight: 700; font-size: 28px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-.hm { margin: 0; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.num.d3 { font-size: 70px; }
+.num.d4 { font-size: 52px; }
+.unit { margin-top: 6px; font-family: var(--font-display); font-weight: 700; font-size: 22px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); line-height: 1; }
+.hm { margin-top: 6px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hm-fora { margin: 0; text-align: center; font-size: 15px; color: var(--muted); }
 
-.track { position: relative; padding-top: 2px; }
-.bar { position: absolute; left: 8px; right: 8px; top: 8px; height: 4px; border-radius: 2px; background: var(--track); }
-.fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--accent); }
-.marks { list-style: none; margin: 0; padding: 0; position: relative; display: flex; justify-content: space-between; }
-.marks li { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 16px; }
-.dot { width: 16px; height: 16px; border-radius: 50%; background: var(--surface); border: 2px solid var(--track); }
-.marks li.on .dot { background: var(--accent); border-color: var(--accent); }
-.lbl { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; width: 28px; text-align: center; }
-.marks li:first-child .lbl { text-align: left; margin-right: -12px; }
-.marks li:last-child .lbl { text-align: right; margin-left: -12px; }
-.next, .rec { margin: 0; font-size: 14px; color: var(--muted); }
-.next strong { color: var(--ink); font-weight: 600; }
-@media (prefers-reduced-motion: no-preference) { .fill { transition: width 0.6s ease; } }
+.legenda { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.legenda li { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.lg-nome { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.lg-val { font-size: 15px; font-variant-numeric: tabular-nums; }
+.sw { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.sw.r-mes { opacity: 0.7; }
+.sw.r-ano { opacity: 0.45; }
+.next, .rec { margin: 0; font-size: 14px; color: var(--muted); text-align: center; }
+
+.marco { margin: 0; text-align: center; padding: 10px 12px; border-radius: 10px; font-weight: 600; font-size: 15px; background: var(--bg); border: 1px solid var(--accent); }
+.marco.mes { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.marco.ano { background: var(--accent); color: var(--accent-ink); font-size: 17px; padding: 14px; }
+.retomada { margin: 0; font-size: 14px; color: var(--muted); text-align: center; }
+.economia { margin: 0; font-size: 15px; font-weight: 600; text-align: center; }
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; margin: 0; }
+.stats div { display: flex; flex-direction: column; gap: 0; }
+.stats dt { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.stats dd { margin: 0; font-size: 15px; font-variant-numeric: tabular-nums; }
+.checkin-feito { margin: 0; font-size: 15px; font-weight: 600; color: var(--accent); }
+
+.historico { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.historico li { font-size: 14px; display: flex; flex-direction: column; }
+.historico .quando { font-size: 12px; color: var(--muted); }
+.historico .nota { color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
 
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .confirm { display: flex; flex-direction: column; gap: 10px; }

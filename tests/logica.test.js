@@ -4,7 +4,11 @@ const L = require('../public/logica.js');
 
 const DIA = L.DAY;
 const AGORA = new Date(2026, 10, 3, 12, 0).getTime();
-const atras = (dias, horas = 0, min = 0) => AGORA - (dias * DIA + horas * 36e5 + min * 6e4);
+// "N dias atrás" pelo relógio de parede, para os testes valerem em qualquer fuso
+const atras = (dias, horas = 0, min = 0) => {
+  const a = new Date(AGORA);
+  return new Date(a.getFullYear(), a.getMonth(), a.getDate() - dias, a.getHours() - horas, a.getMinutes() - min).getTime();
+};
 
 function armazenamentoFalso(inicial = {}) {
   const dados = { ...inicial };
@@ -19,6 +23,12 @@ test.describe('calcular', () => {
   test('divide em dias, horas e minutos', () => {
     const r = L.calcular(atras(12, 5, 18), AGORA);
     assert.deepEqual([r.dias, r.horas, r.minutos], [12, 5, 18]);
+  });
+  test('horário de verão não altera a contagem (mesma hora, 7 dias depois)', () => {
+    const i = new Date(2026, 9, 28, 9, 0).getTime();
+    const f = new Date(2026, 10, 4, 9, 0).getTime();
+    const r = L.calcular(i, f);
+    assert.deepEqual([r.dias, r.horas, r.minutos], [7, 0, 0]);
   });
   test('início no futuro vira zero', () => {
     const r = L.calcular(AGORA + DIA, AGORA);
@@ -378,5 +388,75 @@ test.describe('carregarOuMigrar', () => {
     const novo = L.salvar(s, L.estadoVazio(1), AGORA);
     assert.equal(novo.atualizadoEm, AGORA);
     assert.equal(JSON.parse(s.dados[L.CHAVE_V2]).atualizadoEm, AGORA);
+  });
+});
+
+test.describe('ciclo do tipo manter', () => {
+  test('sem check-ins: zerado e sem "quebrou"', () => {
+    assert.deepEqual(L.cicloManter([], '2026-11-03'), { dias: 0, feitoHoje: false, inicio: null, referencia: null, quebrou: false });
+  });
+  test('check-in hoje: intervalo vai da meia-noite do 1º dia até a meia-noite depois de hoje', () => {
+    const c = L.cicloManter(['2026-11-01', '2026-11-02', '2026-11-03'], '2026-11-03');
+    assert.equal(c.dias, 3);
+    assert.equal(c.feitoHoje, true);
+    assert.equal(c.inicio, new Date(2026, 10, 1).getTime());
+    assert.equal(c.referencia, new Date(2026, 10, 4).getTime());
+    assert.equal(L.calcular(c.inicio, c.referencia).dias, 3);
+  });
+  test('sem check-in hoje: sequência de ontem continua e referencia termina hoje', () => {
+    const c = L.cicloManter(['2026-11-01', '2026-11-02'], '2026-11-03');
+    assert.equal(c.dias, 2);
+    assert.equal(c.feitoHoje, false);
+    assert.equal(c.referencia, new Date(2026, 10, 3).getTime());
+    assert.equal(L.calcular(c.inicio, c.referencia).dias, 2);
+  });
+  test('sequência perdida: zero dias e quebrou = true', () => {
+    const c = L.cicloManter(['2026-10-20', '2026-10-21'], '2026-11-03');
+    assert.equal(c.dias, 0);
+    assert.equal(c.quebrou, true);
+  });
+  test('alimenta marcos: 7 dias seguidos é marco de semana', () => {
+    const dias = ['2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03'];
+    const c = L.cicloManter(dias, '2026-11-03');
+    assert.deepEqual(L.marcoDoDia(c.inicio, c.dias), { tipo: 'semana', n: 1 });
+    const p = L.progressoCiclos(c.inicio, c.referencia);
+    assert.equal(p.semana.fracao, 0);
+    assert.equal(p.mes.dia, 7);
+  });
+  test('atravessa virada de mês e ano', () => {
+    const c = L.cicloManter(['2026-12-31', '2027-01-01'], '2027-01-01');
+    assert.equal(c.dias, 2);
+    assert.equal(c.inicio, new Date(2026, 11, 31).getTime());
+  });
+  test('desfazer check-in remove só o dia', () => {
+    const c = { checkins: ['2026-11-02', '2026-11-03'] };
+    assert.deepEqual(L.desfazerCheckin(c, '2026-11-03').checkins, ['2026-11-02']);
+    assert.deepEqual(c.checkins.length, 2);
+  });
+});
+
+test.describe('atualizarContagem', () => {
+  const c = L.criarContagem({ nome: 'Café', tipo: 'parar', inicio: atras(5), custoDia: 3 }, AGORA, 'k1');
+  test('muda nome, início e custo; mantém histórico e tipo', () => {
+    const r = L.atualizarContagem({ ...c, recorde: 9 }, { nome: ' Café puro ', inicio: atras(8), custoDia: 0 }, AGORA);
+    assert.equal(r.nome, 'Café puro');
+    assert.equal(r.inicio, atras(8));
+    assert.equal(r.custoDia, null);
+    assert.equal(r.recorde, 9);
+    assert.equal(r.tipo, 'parar');
+    assert.equal(r.id, 'k1');
+  });
+  test('campos ausentes ficam como estavam', () => {
+    const r = L.atualizarContagem(c, { nome: 'Outro' }, AGORA);
+    assert.equal(r.inicio, c.inicio);
+    assert.equal(r.custoDia, 3);
+  });
+  test('valida como na criação', () => {
+    assert.throws(() => L.atualizarContagem(c, { nome: '' }, AGORA), /nome/);
+    assert.throws(() => L.atualizarContagem(c, { nome: 'x', inicio: AGORA + 1 }, AGORA), /futuro/);
+  });
+  test('manter nunca ganha custo', () => {
+    const m = L.criarContagem({ nome: 'Inglês', tipo: 'manter', inicio: atras(1) }, AGORA, 'm1');
+    assert.equal(L.atualizarContagem(m, { nome: 'Inglês', custoDia: 9 }, AGORA).custoDia, null);
   });
 });

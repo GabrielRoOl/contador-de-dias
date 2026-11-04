@@ -13,8 +13,15 @@
   function plural(n, a, b) { return n === 1 ? a : b; }
 
   /* ---------- tempo ---------- */
+  /* Tempo decorrido pelo relógio de parede: dias de calendário mais a diferença da hora do dia.
+     Assim "7 dias depois, no mesmo horário" é sempre 7 dias, mesmo se o horário de verão mudar no meio. */
+  function msDoDia(ms) {
+    var d = new Date(ms);
+    return ((d.getHours() * 60 + d.getMinutes()) * 60 + d.getSeconds()) * 1000 + d.getMilliseconds();
+  }
   function calcular(inicio, agora) {
-    var ms = Math.max(0, agora - inicio);
+    var parede = (ordinal(dataLocal(agora)) - ordinal(dataLocal(inicio))) * DAY + msDoDia(agora) - msDoDia(inicio);
+    var ms = Math.max(0, parede);
     return { decorrido: ms / DAY, dias: Math.floor(ms / DAY), horas: Math.floor((ms % DAY) / 36e5), minutos: Math.floor((ms % 36e5) / 6e4) };
   }
 
@@ -85,7 +92,7 @@
     return {
       semana: { dia: Math.floor(decorrido % 7), de: 7, fracao: (decorrido % 7) / 7 },
       mes: { dia: Math.floor(decorrido % 30), de: 30, fracao: (decorrido % 30) / 30 },
-      ano: { anos: anos, dia: Math.min(deAno - 1, Math.floor((agora - ini) / DAY)), de: deAno, fracao: fracaoAno }
+      ano: { anos: anos, dia: Math.min(deAno - 1, calcular(ini, agora).dias), de: deAno, fracao: fracaoAno }
     };
   }
 
@@ -135,6 +142,29 @@
     return Object.assign({}, contagem, { checkins: lista });
   }
 
+  function desfazerCheckin(contagem, dia) {
+    return Object.assign({}, contagem, { checkins: contagem.checkins.filter(function (d) { return d !== dia; }) });
+  }
+
+  /* Meia-noite local de um número de dia (ver `ordinal`). */
+  function ordinalParaMs(o) {
+    var d = new Date(o * DAY);
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime();
+  }
+
+  /* Sequência atual do tipo manter como um intervalo de dias inteiros, para alimentar marcos e barras.
+     `inicio` é a meia-noite do primeiro dia; `referencia` é a meia-noite depois do último, então
+     calcular(inicio, referencia).dias é igual a `dias`. `quebrou` indica sequência perdida (há check-ins antigos). */
+  function cicloManter(checkins, hoje) {
+    var seq = sequenciaCheckins(checkins, hoje);
+    if (seq.dias === 0) return { dias: 0, feitoHoje: false, inicio: null, referencia: null, quebrou: (checkins || []).length > 0 };
+    var ultimo = ordinal(hoje) - (seq.feitoHoje ? 0 : 1);
+    return {
+      dias: seq.dias, feitoHoje: seq.feitoHoje, quebrou: false,
+      inicio: ordinalParaMs(ultimo - seq.dias + 1), referencia: ordinalParaMs(ultimo + 1)
+    };
+  }
+
   /* ---------- contagens ---------- */
   function criarContagem(dados, agora, id) {
     var nome = String(dados.nome || '').trim();
@@ -145,6 +175,16 @@
     if (dados.inicio > agora) throw new Error('A data de início não pode estar no futuro.');
     var custo = dados.tipo === 'parar' && typeof dados.custoDia === 'number' && dados.custoDia > 0 ? dados.custoDia : null;
     return { id: id, nome: nome, tipo: dados.tipo, inicio: dados.inicio, custoDia: custo, recorde: 0, deslizes: [], tentativas: [], checkins: [] };
+  }
+
+  /* Edita nome, início e custo, com as mesmas regras de `criarContagem`. O tipo não muda. */
+  function atualizarContagem(contagem, dados, agora) {
+    var base = criarContagem({
+      nome: dados.nome, tipo: contagem.tipo,
+      inicio: dados.inicio === undefined ? contagem.inicio : dados.inicio,
+      custoDia: dados.custoDia === undefined ? contagem.custoDia : dados.custoDia
+    }, agora, contagem.id);
+    return Object.assign({}, contagem, { nome: base.nome, inicio: base.inicio, custoDia: base.custoDia });
   }
 
   /* Deslize não zera a sequência: só registra. */
@@ -160,7 +200,7 @@
     if (typeof em !== 'number' || !isFinite(em)) throw new Error('Data ou hora inválida.');
     if (em > agora) throw new Error('O recomeço não pode estar no futuro.');
     if (em < contagem.inicio) throw new Error('O recomeço não pode ser antes do início da contagem.');
-    var dias = Math.floor((em - contagem.inicio) / DAY);
+    var dias = calcular(contagem.inicio, em).dias;
     var tentativa = { inicio: contagem.inicio, fim: em, dias: dias, nota: String(opcoes.nota || '').trim().slice(0, 200) };
     return Object.assign({}, contagem, {
       inicio: em,
@@ -235,7 +275,8 @@
     marcoDoDia: marcoDoDia, proximoMarco: proximoMarco, progressoCiclos: progressoCiclos,
     economia: economia, formatarReais: formatarReais,
     sequenciaCheckins: sequenciaCheckins, maiorSequencia: maiorSequencia, registrarCheckin: registrarCheckin,
-    criarContagem: criarContagem, registrarDeslize: registrarDeslize, recomecar: recomecar, estatisticasParar: estatisticasParar,
+    desfazerCheckin: desfazerCheckin, cicloManter: cicloManter, ordinalParaMs: ordinalParaMs,
+    criarContagem: criarContagem, atualizarContagem: atualizarContagem, registrarDeslize: registrarDeslize, recomecar: recomecar, estatisticasParar: estatisticasParar,
     preferenciasPadrao: preferenciasPadrao, estadoVazio: estadoVazio, migrarV1: migrarV1,
     carregarOuMigrar: carregarOuMigrar, salvar: salvar
   };
