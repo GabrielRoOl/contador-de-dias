@@ -55,9 +55,10 @@ class RotasTest {
         c: Config = config(), vapid: ChavesVapid? = chaves,
         geral: LimitadorTaxa = LimitadorTaxa(10_000, 60_000) { agora },
         criacao: LimitadorTaxa = LimitadorTaxa(10_000, 3_600_000) { agora },
+        tentativasConvite: LimitadorTaxa = LimitadorTaxa(10_000, 3_600_000) { agora },
         bloco: suspend ApplicationTestBuilder.(HttpClient) -> Unit,
     ) = testApplication {
-        application { modulo(c, banco, vapid, { agora }, geral, criacao) }
+        application { modulo(c, banco, vapid, { agora }, geral, criacao, tentativasConvite) }
         bloco(createClient { followRedirects = false })
     }
 
@@ -421,5 +422,59 @@ class RotasTest {
         assertFalse(Regex("\\sstyle\\s*=", RegexOption.IGNORE_CASE).containsMatchIn(html), "style= embutido é bloqueado pela CSP")
         val app = File("../public/app.js").takeIf { it.isFile }?.readText() ?: return
         assertFalse(Regex("style=|\\.setAttribute\\('style'|insertAdjacentHTML", RegexOption.IGNORE_CASE).containsMatchIn(app), "app.js não pode montar style= nem HTML por fora do esc()")
+    }
+
+    // ---------------------------------------------------------------- convite
+
+    private val convite = "convite-de-teste-0123456789"
+    private fun comConvite(tentativas: LimitadorTaxa = LimitadorTaxa(10_000, 3_600_000) { agora }, bloco: suspend ApplicationTestBuilder.(HttpClient) -> Unit) =
+        comApp(Config(pastaEstatica = pasta, convite = convite, caminhoBanco = File(dir, "t.db").path), tentativasConvite = tentativas, bloco = bloco)
+
+    @Test fun `com convite configurado, sem o código ou com código errado não cadastra`() = comConvite { c ->
+        val semCodigo = c.post("/contador/api/dispositivos")
+        val errado = c.post("/contador/api/dispositivos") { header("X-Convite", "$convite-x") }
+        val vazio = c.post("/contador/api/dispositivos") { header("X-Convite", "") }
+        val maiuscula = c.post("/contador/api/dispositivos") { header("X-Convite", convite.uppercase()) }
+        listOf(semCodigo, errado, vazio, maiuscula).forEach { assertEquals(HttpStatusCode.Forbidden, it.status) }
+        assertEquals(1, listOf(semCodigo, errado, vazio, maiuscula).map { it.bodyAsText() }.toSet().size, "mesma resposta: não diz se faltou ou errou")
+        assertEquals(0, banco.contarDispositivos(), "nada foi criado")
+    }
+
+    @Test fun `com o código certo cadastra, e o código não aparece na resposta`() = comConvite { c ->
+        val r = c.post("/contador/api/dispositivos") { header("X-Convite", convite) }
+        assertEquals(HttpStatusCode.Created, r.status)
+        assertFalse(convite in r.bodyAsText())
+        assertEquals(1, banco.contarDispositivos())
+    }
+
+    @Test fun `o convite vale só para cadastrar, os outros endpoints usam o segredo do aparelho`() = comConvite { c ->
+        val r = c.post("/contador/api/dispositivos") { header("X-Convite", convite) }
+        val o = Json.parseToJsonElement(r.bodyAsText()).jsonObject
+        val (id, segredo) = o["id"]!!.jsonPrimitive.content to o["segredo"]!!.jsonPrimitive.content
+        assertEquals(HttpStatusCode.NoContent, c.putJson("/contador/api/dispositivos/$id/estado", estadoOk, segredo).status)
+        assertEquals(HttpStatusCode.NoContent, c.delete("/contador/api/dispositivos/$id") { header(HttpHeaders.Authorization, "Bearer $segredo") }.status)
+        assertEquals(HttpStatusCode.OK, c.get("/contador/api/saude").status)
+        assertEquals(HttpStatusCode.OK, c.get("/contador/api/chave-publica").status)
+    }
+
+    @Test fun `toda tentativa conta no limite, até a certa, e passado o limite nem o código certo entra`() = comConvite(LimitadorTaxa(3, 3_600_000) { agora }) { c ->
+        repeat(2) { assertEquals(HttpStatusCode.Forbidden, c.post("/contador/api/dispositivos") { header("X-Convite", "errado-$it") }.status) }
+        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("X-Convite", convite) }.status)
+        val r = c.post("/contador/api/dispositivos") { header("X-Convite", convite) }
+        assertEquals(HttpStatusCode.TooManyRequests, r.status)
+        assertEquals("3600", r.headers[HttpHeaders.RetryAfter])
+        agora += 3_600_000
+        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("X-Convite", convite) }.status, "a janela renova")
+    }
+
+    @Test fun `as tentativas são por endereço, uma pessoa errando não trava a outra`() = comConvite(LimitadorTaxa(1, 3_600_000) { agora }) { c ->
+        assertEquals(HttpStatusCode.Forbidden, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "200.1.1.1") }.status)
+        assertEquals(HttpStatusCode.TooManyRequests, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "200.1.1.1"); header("X-Convite", convite) }.status)
+        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "200.2.2.2"); header("X-Convite", convite) }.status)
+    }
+
+    @Test fun `sem convite configurado o cadastro continua aberto, com ou sem cabeçalho`() = comApp { c ->
+        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos").status)
+        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("X-Convite", "qualquer") }.status)
     }
 }

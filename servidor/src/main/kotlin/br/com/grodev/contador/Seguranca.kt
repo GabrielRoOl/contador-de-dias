@@ -14,11 +14,16 @@ object Seguranca {
 
     fun novoId(): String = bytes(16)
     fun novoSegredo(): String = bytes(32)
+    fun novoConvite(): String = bytes(32)
 
     fun hash(segredo: String): ByteArray = MessageDigest.getInstance("SHA-256").digest(segredo.toByteArray(Charsets.UTF_8))
 
     /** Comparação em tempo constante. */
     fun confere(segredo: String, hashEsperado: ByteArray): Boolean = MessageDigest.isEqual(hash(segredo), hashEsperado)
+
+    /** Código de convite recebido x configurado, em tempo constante (compara os hashes, que têm sempre o mesmo tamanho). */
+    fun conviteConfere(recebido: String?, esperado: String): Boolean =
+        recebido != null && recebido.length <= 200 && MessageDigest.isEqual(hash(recebido), hash(esperado))
 
     /** Extrai o segredo de `Authorization: Bearer <segredo>`. */
     fun segredoDoCabecalho(cabecalho: String?): String? {

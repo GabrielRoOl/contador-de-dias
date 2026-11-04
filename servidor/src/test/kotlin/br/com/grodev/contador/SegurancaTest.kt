@@ -59,4 +59,12 @@ class SegurancaTest {
             if (it == "1.2.3.4 ") assertEquals("1.2.3.4", Rede.chave(it)) else assertNull(Rede.chave(it), "'$it'")
         }
     }
+
+    @Test fun `convite confere em tempo constante e recusa o que não é igual`() {
+        val c = Seguranca.novoConvite()
+        assertTrue(c.length >= Config.TAMANHO_MINIMO_CONVITE && Validacao.idValido(c.take(10)))
+        assertNotEquals(c, Seguranca.novoConvite())
+        assertTrue(Seguranca.conviteConfere(c, c))
+        listOf(null, "", c + "x", c.dropLast(1), c.uppercase(), " $c", "x".repeat(500)).forEach { assertFalse(Seguranca.conviteConfere(it, c), "'$it'") }
+    }
 }

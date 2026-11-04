@@ -14,8 +14,12 @@ data class Config(
     val maxDispositivos: Int = 10_000,
     /** Soma dos estados guardados; passou disso, novos dispositivos e estados maiores são recusados. */
     val maxBytes: Long = 200L * 1024 * 1024,
+    /** Código que `POST /dispositivos` exige no cabeçalho X-Convite. null = cadastro aberto a qualquer um. */
+    val convite: String? = null,
 ) {
     companion object {
+        const val TAMANHO_MINIMO_CONVITE = 16
+
         /** Lê KEY=VALOR, ignora linhas vazias e comentários. As variáveis de ambiente de verdade têm prioridade. */
         fun lerEnv(arquivo: File): Map<String, String> {
             if (!arquivo.isFile) return emptyMap()
@@ -43,6 +47,9 @@ data class Config(
                 assuntoVapid = e["VAPID_SUBJECT"]?.takeIf { it.isNotBlank() } ?: "https://grodev.com.br/contador",
                 maxDispositivos = inteiro("MAX_DISPOSITIVOS", 10_000),
                 maxBytes = inteiro("MAX_BYTES_MB", 200) * 1024L * 1024L,
+                convite = e["CONVITE"]?.takeIf { it.isNotBlank() }?.also {
+                    if (it.length < TAMANHO_MINIMO_CONVITE) error("CONVITE deve ter pelo menos $TAMANHO_MINIMO_CONVITE caracteres (gere um com: java -jar contador.jar gerar-convite)")
+                },
             )
         }
     }

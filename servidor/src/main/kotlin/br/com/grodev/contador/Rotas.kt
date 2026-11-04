@@ -48,6 +48,7 @@ const val PREFIXO = "/contador"
 private const val MAX_CORPO_ESTADO = 256 * 1024
 private const val MAX_CORPO_PUSH = 8 * 1024
 const val LIMITE_CRIACAO_POR_HORA = 5
+const val LIMITE_CONVITE_POR_HORA = 10
 
 private val json = Json { ignoreUnknownKeys = true }
 private val log = LoggerFactory.getLogger("rotas")
@@ -129,6 +130,7 @@ fun Application.modulo(
     relogio: () -> Long = System::currentTimeMillis,
     limiteGeral: LimitadorTaxa = LimitadorTaxa(240, 60_000, relogio),
     limiteCriacao: LimitadorTaxa = LimitadorTaxa(LIMITE_CRIACAO_POR_HORA, 3_600_000, relogio),
+    limiteConvite: LimitadorTaxa = LimitadorTaxa(LIMITE_CONVITE_POR_HORA, 3_600_000, relogio),
 ) {
     install(cabecalhosPadrao(PoliticaCsp(config.pastaEstatica)))
     install(ContentNegotiation) { json(Json { encodeDefaults = true }) }
@@ -175,6 +177,17 @@ fun Application.modulo(
             }
 
             post("/dispositivos") {
+                if (config.convite != null) {
+                    // Toda tentativa conta, certa ou errada: não dá para usar a resposta como oráculo nem adivinhar aos poucos.
+                    if (!limiteConvite.permitir("convite:" + call.ipCliente())) {
+                        call.response.header(HttpHeaders.RetryAfter, "3600")
+                        return@post call.erro(HttpStatusCode.TooManyRequests, "Muitas tentativas com código de convite. Tente mais tarde.")
+                    }
+                    // Mesma resposta para código ausente e código errado.
+                    if (!Seguranca.conviteConfere(call.request.header("X-Convite"), config.convite)) {
+                        return@post call.erro(HttpStatusCode.Forbidden, "Convite inválido.")
+                    }
+                }
                 if (!limiteCriacao.permitir("novo:" + call.ipCliente())) {
                     call.response.header(HttpHeaders.RetryAfter, "3600")
                     return@post call.erro(HttpStatusCode.TooManyRequests, "Muitos dispositivos novos deste endereço. Tente mais tarde.")

@@ -8,10 +8,11 @@ Kotlin + Ktor (CIO) + SQLite. Serve o app em `/contador/`, guarda o estado de ca
 mvn test                      # 156 testes (precisa de Node só para regerar as fixtures)
 mvn -DskipTests package       # gera target/contador.jar (fat jar, ~18 MB)
 java -jar target/contador.jar gerar-vapid     # imprime as chaves VAPID para o .env
+java -jar target/contador.jar gerar-convite   # imprime o CONVITE para o .env
 java -Xmx160m -jar target/contador.jar        # sobe o servidor (lê o .env da pasta atual)
 ```
 
-Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor sobe, mas sem enviar notificações.
+Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor sobe, mas sem enviar notificações. Com `CONVITE` no `.env` (mín. 16 caracteres), `POST /dispositivos` exige o cabeçalho `X-Convite` (o app pede o código nos Ajustes); sem `CONVITE` o cadastro é aberto e o servidor avisa no log.
 
 ## API (`/contador/api`)
 
@@ -19,7 +20,7 @@ Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor 
 |---|---|
 | `GET /saude` | `{ok, push}` |
 | `GET /chave-publica` | chave VAPID pública, para o `pushManager.subscribe` |
-| `POST /dispositivos` | cria um dispositivo anônimo: `{id, segredo}` (só o hash do segredo é guardado) |
+| `POST /dispositivos` | cria um dispositivo anônimo: `{id, segredo}` (só o hash do segredo é guardado). Com `CONVITE` configurado exige `X-Convite`: 403 igual para ausente e errado; 10 tentativas por hora por endereço, certas ou erradas |
 | `PUT /dispositivos/{id}/estado` | sincroniza as contagens e preferências (JSON do modelo v2) |
 | `PUT /dispositivos/{id}/push` | grava a inscrição (`{endpoint, keys:{p256dh, auth}}`) |
 | `DELETE /dispositivos/{id}` | apaga tudo do dispositivo |
