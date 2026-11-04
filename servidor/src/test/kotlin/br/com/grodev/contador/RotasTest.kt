@@ -283,7 +283,10 @@ class RotasTest {
         val raiz = c.get("/")
         assertTrue(raiz.status.value in 300..399); assertEquals("/contador/", raiz.headers[HttpHeaders.Location])
         val sem = c.get("/contador")
-        assertTrue(sem.status == HttpStatusCode.OK || sem.status.value in 300..399, sem.status.toString())
+        // servir o HTML aqui quebraria os caminhos relativos (app.css, sw.js): tem que redirecionar para a barra final
+        assertTrue(sem.status.value in 300..399, sem.status.toString())
+        assertEquals("/contador/", sem.headers[HttpHeaders.Location])
+        assertEquals(HttpStatusCode.OK, c.get("/contador/").status)
     }
 
     @Test fun `não é possível sair da pasta pública`() = comApp { c ->

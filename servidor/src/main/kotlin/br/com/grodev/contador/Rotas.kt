@@ -112,6 +112,8 @@ fun Application.modulo(
 
     routing {
         get("/") { call.respondRedirect("$PREFIXO/") }
+        // Sem a barra final os caminhos relativos do app (app.css, sw.js...) apontariam para a raiz do domínio.
+        get(PREFIXO) { call.respondRedirect("$PREFIXO/") }
 
         route("$PREFIXO/api") {
             // limite geral por IP, antes de qualquer rota
