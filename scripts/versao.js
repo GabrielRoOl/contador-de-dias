@@ -14,5 +14,5 @@ const nova = process.argv[3] ? Number(process.argv[3]) : atual + 1;
 
 fs.writeFileSync(arquivoSw, sw.replace(/contagem-de-dias-v\d+/, 'contagem-de-dias-v' + nova));
 const html = fs.readFileSync(arquivoHtml, 'utf8');
-fs.writeFileSync(arquivoHtml, html.replace(/(href|src)="(app\.css|logica\.js|textos\.js|app\.js)(\?v=\d+)?"/g, '$1="$2?v=' + nova + '"'));
+fs.writeFileSync(arquivoHtml, html.replace(/(href|src)="(app\.css|logica\.js|textos\.js|sincronia\.js|app\.js)(\?v=\d+)?"/g, '$1="$2?v=' + nova + '"'));
 console.log('versão ' + atual + ' -> ' + nova);

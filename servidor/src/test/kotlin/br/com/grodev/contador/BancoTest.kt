@@ -111,4 +111,125 @@ class BancoTest {
         banco.salvarEstado("d1", "'); DROP TABLE dispositivos; --", "UTC", "09:00", 1)
         assertEquals(1, banco.contarDispositivos())
     }
+
+    @Test fun `a lista do agendador não carrega o estado, só estadoJson(id) carrega`() {
+        novo()
+        banco.salvarEstado("d1", "x".repeat(300_000), "UTC", "09:00", 2)
+        banco.salvarInscricao("d1", "https://fcm.googleapis.com/x", "p", "a", 5)
+        val leve = banco.comInscricao().single()
+        assertEquals("", leve.estadoJson, "a consulta por minuto não pode trazer centenas de KB por dispositivo")
+        assertEquals("UTC", leve.fuso); assertEquals("09:00", leve.horaResumo); assertTrue(leve.temInscricao)
+        assertEquals(300_000, banco.estadoJson("d1")!!.length)
+        assertNull(banco.estadoJson("nao-existe"))
+    }
+
+    private fun bytesDoBanco(): ByteArray = dir.listFiles { f -> f.name.startsWith("t.db") }!!.map { it.readBytes() }.fold(ByteArray(0)) { a, b -> a + b }
+    private fun ocorrencias(onde: ByteArray, texto: String) = String(onde, Charsets.ISO_8859_1).windowed(texto.length).count { it == texto }
+
+    @Test fun `apagar um dispositivo não deixa o texto no arquivo do banco`() {
+        novo()
+        banco.salvarEstado("d1", """{"nome":"MARCADOR_PEQUENO_123"}""", "UTC", "09:00", 2)
+        banco.salvarEstado("d1", "MARCADOR_GRANDE_456" + "y".repeat(20_000), "UTC", "09:00", 3) // passa de uma página: vai para páginas de overflow
+        assertTrue(banco.apagar("d1"))
+        val bytes = bytesDoBanco()
+        assertEquals(0, ocorrencias(bytes, "MARCADOR_PEQUENO_123"), "restos do estado antigo no banco ou no WAL")
+        assertEquals(0, ocorrencias(bytes, "MARCADOR_GRANDE_456"), "restos do estado apagado no banco ou no WAL")
+    }
+
+    @Test fun `a limpeza de inativos também apaga de verdade`() {
+        novo("velho", 100)
+        banco.salvarEstado("velho", "MARCADOR_VELHO_789", "UTC", "09:00", 100)
+        assertEquals(1, banco.limparInativos(500))
+        assertEquals(0, ocorrencias(bytesDoBanco(), "MARCADOR_VELHO_789"))
+    }
+
+    @Test fun `abrir um banco antigo limpa os restos que ele já tinha`() {
+        val arquivo = File(dir, "antigo.db").path
+        java.sql.DriverManager.getConnection("jdbc:sqlite:$arquivo").use { c ->
+            c.createStatement().use {
+                it.execute("PRAGMA journal_mode = WAL")
+                it.execute("CREATE TABLE dispositivos (id TEXT PRIMARY KEY, segredo_hash BLOB NOT NULL, criado_em INTEGER NOT NULL, atualizado_em INTEGER NOT NULL, fuso TEXT NOT NULL, hora_resumo TEXT NOT NULL, estado_json TEXT NOT NULL, push_endpoint TEXT, push_p256dh TEXT, push_auth TEXT, ultimo_envio TEXT, tentativa_data TEXT, tentativas INTEGER NOT NULL DEFAULT 0, proxima_tentativa INTEGER NOT NULL DEFAULT 0)")
+                it.execute("PRAGMA user_version = 1")
+                it.execute("INSERT INTO dispositivos (id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, estado_json) VALUES ('x', x'00', 1, 1, 'UTC', '09:00', 'MARCADOR_ANTIGO_321')")
+                it.execute("DELETE FROM dispositivos") // sem secure_delete: o texto fica no arquivo
+            }
+        }
+        Banco(arquivo) // migra
+        val bytes = dir.listFiles { f -> f.name.startsWith("antigo.db") }!!.map { it.readBytes() }.fold(ByteArray(0)) { a, b -> a + b }
+        assertEquals(0, ocorrencias(bytes, "MARCADOR_ANTIGO_321"))
+    }
+
+    @Test fun `a cota soma os bytes dos estados e acompanha as mudanças`() {
+        assertEquals(0, banco.bytesTotais())
+        novo("d1"); novo("d2") // "{}" = 2 bytes cada
+        assertEquals(4, banco.bytesTotais())
+        banco.salvarEstado("d1", "ação".repeat(10), "UTC", "09:00", 2) // acentos: conta bytes, não caracteres
+        assertEquals(10 * 6 + 2, banco.bytesTotais())
+        assertEquals(60L, banco.obter("d1")!!.tamanho)
+        banco.apagar("d1")
+        assertEquals(2, banco.bytesTotais())
+    }
+
+    @Test fun `limpa sem inscrição o que nunca foi usado e o que está parado`() {
+        val dia = 86_400_000L
+        val agora = 100 * dia
+        novo("nunca-usado-velho", agora - 2 * dia)      // criado e nunca tocou em nada
+        novo("nunca-usado-novo", agora - dia / 2)       // ainda dentro do prazo (alguém pode estar ativando)
+        novo("parado", agora - 50 * dia); banco.salvarEstado("parado", "{}", "UTC", "09:00", agora - 20 * dia)
+        novo("ativo-recente", agora - 50 * dia); banco.salvarEstado("ativo-recente", "{}", "UTC", "09:00", agora - 2 * dia)
+        novo("com-inscricao", agora - 50 * dia); banco.salvarEstado("com-inscricao", "{}", "UTC", "09:00", agora - 30 * dia)
+        banco.salvarInscricao("com-inscricao", "https://fcm.googleapis.com/z", "p", "a", agora - 30 * dia)
+        banco.salvarEstado("com-inscricao", "{}", "UTC", "09:00", agora - 30 * dia)
+        assertEquals(2, banco.limparSemInscricao(agora - dia, agora - 14 * dia))
+        listOf("nunca-usado-velho", "parado").forEach { assertNull(banco.obter(it), it) }
+        listOf("nunca-usado-novo", "ativo-recente", "com-inscricao").forEach { assertNotNull(banco.obter(it), it) }
+    }
+
+    @Test fun `bancos anteriores à cota recebem o tamanho dos estados que já tinham`() {
+        val arquivo = File(dir, "v1.db").path
+        java.sql.DriverManager.getConnection("jdbc:sqlite:$arquivo").use { c ->
+            c.createStatement().use {
+                it.execute("CREATE TABLE dispositivos (id TEXT PRIMARY KEY, segredo_hash BLOB NOT NULL, criado_em INTEGER NOT NULL, atualizado_em INTEGER NOT NULL, fuso TEXT NOT NULL, hora_resumo TEXT NOT NULL, estado_json TEXT NOT NULL, push_endpoint TEXT, push_p256dh TEXT, push_auth TEXT, ultimo_envio TEXT, tentativa_data TEXT, tentativas INTEGER NOT NULL DEFAULT 0, proxima_tentativa INTEGER NOT NULL DEFAULT 0)")
+                it.execute("PRAGMA user_version = 1")
+                it.execute("INSERT INTO dispositivos (id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, estado_json) VALUES ('x', x'00', 1, 1, 'UTC', '09:00', '12345')")
+            }
+        }
+        assertEquals(5, Banco(arquivo).bytesTotais())
+    }
+
+    @Test fun `convite de uso único mesmo com pedidos simultâneos`() {
+        val hash = Seguranca.hash("CODIGO")
+        banco.criarConvite("c1", hash, "Maria", 100, 1_000)
+        val resultados = java.util.concurrent.CopyOnWriteArrayList<Boolean>()
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+        val largada = java.util.concurrent.CountDownLatch(1)
+        (1..8).forEach { n ->
+            pool.submit {
+                largada.await()
+                resultados += try { banco.cadastrarComConvite(hash, 200, "d$n", Seguranca.hash("s$n"), "{}", "UTC", "09:00") } catch (_: Exception) { false }
+            }
+        }
+        largada.countDown(); pool.shutdown(); pool.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)
+        assertEquals(1, resultados.count { it }, "exatamente um cadastro: $resultados")
+        assertEquals(1, banco.contarDispositivos())
+        assertEquals("usado", banco.listarConvites().single().estado(300))
+    }
+
+    @Test fun `convite expirado, revogado ou inexistente não cria dispositivo`() {
+        banco.criarConvite("e", Seguranca.hash("EXP"), "e", 100, 150)
+        banco.criarConvite("r", Seguranca.hash("REV"), "r", 100, 1_000)
+        banco.revogarConvite("r")
+        assertFalse(banco.cadastrarComConvite(Seguranca.hash("EXP"), 150, "x1", Seguranca.hash("s"), "{}", "UTC", "09:00"))
+        assertFalse(banco.cadastrarComConvite(Seguranca.hash("REV"), 200, "x2", Seguranca.hash("s"), "{}", "UTC", "09:00"))
+        assertFalse(banco.cadastrarComConvite(Seguranca.hash("NAO-EXISTE"), 200, "x3", Seguranca.hash("s"), "{}", "UTC", "09:00"))
+        assertEquals(0, banco.contarDispositivos())
+    }
+
+    @Test fun `convites pendentes contam só os que ainda valem e a limpeza tira os vencidos antigos`() {
+        banco.criarConvite("a", Seguranca.hash("A"), "a", 100, 1_000)
+        banco.criarConvite("b", Seguranca.hash("B"), "b", 100, 150)
+        assertEquals(1, banco.convitesPendentes(200))
+        assertEquals(1, banco.limparConvitesVelhos(500))
+        assertEquals(listOf("a"), banco.listarConvites().map { it.id })
+    }
 }

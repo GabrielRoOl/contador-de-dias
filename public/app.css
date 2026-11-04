@@ -277,3 +277,11 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(6px);
 .acoes-topo .btn { width: auto; white-space: nowrap; font-size: 15px; letter-spacing: 0.06em; }
 .acoes-topo #toggle-form { flex: 1 1 auto; }
 .acoes-topo #toggle-pomodoro { flex: 0 0 auto; padding: 0 14px; }
+
+#a-notif-botao { align-self: flex-start; margin-top: 4px; }
+#a-notif-botao:disabled { opacity: 0.6; }
+
+/* convites (administrador) */
+.codigo { font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; font-size: 20px; font-weight: 700; letter-spacing: 0.08em; margin: 0; padding: 12px; border: 1px dashed var(--accent); border-radius: 10px; text-align: center; user-select: all; overflow-wrap: anywhere; }
+#a-convites-lista li { flex-direction: row; justify-content: space-between; align-items: center; gap: 8px; }
+#a-convites-lista .info { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }

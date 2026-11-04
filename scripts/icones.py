@@ -31,10 +31,20 @@ def renderizar(pg, escala, tamanho, arquivo):
     pg.set_content(f'<html><body style="margin:0;background:#050912">{desenho}</body></html>')
     pg.screenshot(path=os.path.join(PUB, arquivo), clip={'x': 0, 'y': 0, 'width': tamanho, 'height': tamanho})
 
+def badge(pg, tamanho, arquivo):
+    """Ícone monocromático da barra de status do Android: só o canal alfa importa, então fundo transparente e anéis brancos."""
+    aneis = ''.join(f'<circle cx="256" cy="256" r="{r}" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round" pathLength="100" '
+                    f'stroke-dasharray="{f} 100" transform="rotate(-90 256 256)"/>' for r, f in ((200, 30), (146, 56), (92, 80)))
+    pg.set_viewport_size({'width': tamanho, 'height': tamanho})
+    pg.set_content(f'<html><body style="margin:0;background:transparent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" '
+                   f'width="{tamanho}" height="{tamanho}">{aneis}</svg></body></html>')
+    pg.screenshot(path=os.path.join(PUB, arquivo), clip={'x': 0, 'y': 0, 'width': tamanho, 'height': tamanho}, omit_background=True)
+
 with sync_playwright() as p:
     b = p.chromium.launch(); pg = b.new_page()
     renderizar(pg, 1.12, 512, 'icon-512.png')      # "any": os anéis ocupam mais o quadro
     renderizar(pg, 1.12, 192, 'icon-192.png')
     renderizar(pg, 1.0, 512, 'icon-maskable-512.png')  # "maskable": tudo dentro da zona segura (círculo de 80%)
+    badge(pg, 96, 'icon-badge.png')
     b.close()
 print('ícones gerados em public/')

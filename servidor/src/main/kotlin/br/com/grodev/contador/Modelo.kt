@@ -38,3 +38,19 @@ data class Estado(
     val contagens: List<Contagem> = emptyList(),
     val atualizadoEm: Long = 0,
 )
+
+/**
+ * O que o servidor precisa para montar o aviso diário. Notas, deslizes e o detalhe do histórico nunca são lidos aqui,
+ * então nem são guardados: menos dados pessoais no servidor e linhas pequenas no banco.
+ * `Mensagens.compor` dá o mesmo resultado com o estado completo e com o reduzido (conferido em MensagensTest).
+ */
+fun Estado.paraServidor(): Estado = copy(
+    preferencias = preferencias.copy(visual = Preferencias().visual, modo = Preferencias().modo),
+    contagens = contagens.map { c ->
+        c.copy(
+            deslizes = emptyList(),
+            tentativas = c.tentativas.take(1).map { it.copy(nota = "") }, // só importa se existe alguma
+            checkins = c.checkins.distinct().sorted(),
+        )
+    },
+)

@@ -12,8 +12,17 @@ data class Config(
     val vapidPrivada: String? = null,
     val assuntoVapid: String = "https://grodev.com.br/contador",
     val maxDispositivos: Int = 10_000,
+    /** Soma dos estados guardados; passou disso, novos dispositivos e estados maiores são recusados. */
+    val maxBytes: Long = 200L * 1024 * 1024,
+    /**
+     * Código do administrador. Com ele configurado, `POST /dispositivos` só aceita X-Convite com este código (o aparelho vira
+     * administrador e pode gerar convites) ou com um convite individual de uso único. null = cadastro aberto, sem convites.
+     */
+    val admin: String? = null,
 ) {
     companion object {
+        const val TAMANHO_MINIMO_ADMIN = 16
+
         /** Lê KEY=VALOR, ignora linhas vazias e comentários. As variáveis de ambiente de verdade têm prioridade. */
         fun lerEnv(arquivo: File): Map<String, String> {
             if (!arquivo.isFile) return emptyMap()
@@ -40,6 +49,10 @@ data class Config(
                 vapidPrivada = e["VAPID_PRIVATE"]?.takeIf { it.isNotBlank() },
                 assuntoVapid = e["VAPID_SUBJECT"]?.takeIf { it.isNotBlank() } ?: "https://grodev.com.br/contador",
                 maxDispositivos = inteiro("MAX_DISPOSITIVOS", 10_000),
+                maxBytes = inteiro("MAX_BYTES_MB", 200) * 1024L * 1024L,
+                admin = e["ADMIN"]?.takeIf { it.isNotBlank() }?.also {
+                    if (it.length < TAMANHO_MINIMO_ADMIN) error("ADMIN deve ter pelo menos $TAMANHO_MINIMO_ADMIN caracteres (gere um com: java -jar contador.jar gerar-admin)")
+                },
             )
         }
     }

@@ -5,13 +5,14 @@ Kotlin + Ktor (CIO) + SQLite. Serve o app em `/contador/`, guarda o estado de ca
 ## Comandos
 
 ```bash
-mvn test                      # 133 testes (precisa de Node só para regerar as fixtures)
+mvn test                      # 179 testes (precisa de Node só para regerar as fixtures)
 mvn -DskipTests package       # gera target/contador.jar (fat jar, ~18 MB)
 java -jar target/contador.jar gerar-vapid     # imprime as chaves VAPID para o .env
+java -jar target/contador.jar gerar-admin     # imprime o ADMIN para o .env
 java -Xmx160m -jar target/contador.jar        # sobe o servidor (lê o .env da pasta atual)
 ```
 
-Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor sobe, mas sem enviar notificações.
+Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor sobe, mas sem enviar notificações. Com `ADMIN` no `.env` (mín. 16 caracteres), `POST /dispositivos` exige o cabeçalho `X-Convite`: ou a chave de administrador (o aparelho vira administrador) ou um **convite individual de uso único** (20 símbolos, vale 7 dias, só o hash é guardado). O administrador gera, lista e revoga convites nos Ajustes do app. Sem `ADMIN` o cadastro é aberto, não há convites e o servidor avisa no log.
 
 ## API (`/contador/api`)
 
@@ -19,19 +20,24 @@ Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor 
 |---|---|
 | `GET /saude` | `{ok, push}` |
 | `GET /chave-publica` | chave VAPID pública, para o `pushManager.subscribe` |
-| `POST /dispositivos` | cria um dispositivo anônimo: `{id, segredo}` (só o hash do segredo é guardado) |
+| `POST /dispositivos` | cria um dispositivo anônimo: `{id, segredo}` (só o hash do segredo é guardado). Com `ADMIN` configurado exige `X-Convite`: 403 igual para ausente, errado, usado, revogado e expirado; 10 tentativas por hora por endereço, certas ou erradas |
 | `PUT /dispositivos/{id}/estado` | sincroniza as contagens e preferências (JSON do modelo v2) |
 | `PUT /dispositivos/{id}/push` | grava a inscrição (`{endpoint, keys:{p256dh, auth}}`) |
 | `DELETE /dispositivos/{id}` | apaga tudo do dispositivo |
+| `GET /dispositivos/{id}/convites` | só administrador (403 para os outros): lista os convites, sem os códigos |
+| `POST /dispositivos/{id}/convites` | só administrador: `{nome}` → `{id, codigo, expiraEm}`; o código só aparece nesta resposta; no máximo 10 pendentes, 20 por hora |
+| `DELETE /dispositivos/{id}/convites/{convite}` | só administrador: revoga o convite; se já foi usado, apaga o aparelho que o usou |
 
-As três últimas exigem `Authorization: Bearer <segredo>`. Id desconhecido e segredo errado dão o mesmo 401.
+As rotas com `{id}` exigem `Authorization: Bearer <segredo>`. Id desconhecido e segredo errado dão o mesmo 401.
 
 ## Segurança
 
 - Endpoint de push só em HTTPS e só de serviços conhecidos (FCM, Mozilla, Apple, Windows): evita que o servidor seja induzido a chamar URLs internas (SSRF). Redirecionamentos não são seguidos.
-- Corpo limitado (512 KB), validação de tudo que chega, SQL parametrizado, limite por IP (o IP real vem do `CF-Connecting-IP`, só aceito quando a conexão vem de 127.0.0.1).
-- Arquivos do app com `Cache-Control: no-cache` e cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`.
-- Dispositivos sem sincronizar há 365 dias são apagados (LGPD). Logs não trazem segredos nem endpoints.
+- Corpo limitado (256 KB), validação de tudo que chega, SQL parametrizado. Limite por IP: 240 req/min na API e 5 dispositivos novos por hora; IPv6 conta por bloco /64. O IP real vem do `CF-Connecting-IP`, só aceito quando a conexão vem de 127.0.0.1 e só se for mesmo um IP.
+- Cota: `MAX_DISPOSITIVOS` (10 000) e `MAX_BYTES_MB` (200, soma dos estados guardados). Dispositivos que nunca foram usados (1 dia) ou ficam sem inscrição de push e parados (14 dias) são apagados.
+- O servidor guarda só o que o aviso usa: notas, deslizes e o detalhe do histórico não são guardados.
+- Arquivos do app com `Cache-Control: no-cache` e cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, COOP/CORP e **CSP** (só scripts do próprio site; o script do tema entra pelo hash, recalculado quando o `index.html` muda). Não pode haver `style=`, `onclick=` nem outro `<script>` embutido no `index.html`: `RotasTest` e `tests/e2e_push.py` conferem.
+- Dispositivos sem sincronizar há 365 dias são apagados (LGPD). Apagar é de verdade: `secure_delete` e checkpoint do WAL (o texto não fica no arquivo do banco). Logs não trazem segredos nem endpoints.
 
 ## Agendador
 

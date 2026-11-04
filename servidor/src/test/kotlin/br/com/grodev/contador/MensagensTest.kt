@@ -148,4 +148,24 @@ class MensagensTest {
         assertEquals("2 dias seguidos inglês.", emSp, "em São Paulo ainda é dia 3 e o check-in de hoje já foi feito")
         assertTrue(emUtc.startsWith("2 dias seguidos inglês.") && emUtc.endsWith("?"), "em UTC já é dia 4 e falta marcar: $emUtc")
     }
+
+    @Test fun `o estado reduzido do servidor dá exatamente o mesmo aviso que o completo`() {
+        val tent = listOf(Tentativa(inicioHa(40), inicioHa(2), 38, "nota longa"), Tentativa(inicioHa(80), inicioHa(41), 39, "outra"))
+        val desl = listOf(Deslize(inicioHa(5), "escorreguei"), Deslize(inicioHa(3), ""))
+        val seq = datas(0, 1, 2, 3, 6, 7, 8, 9, 10, 11) + datas(3)
+        val cheio = Estado(
+            preferencias = Preferencias(visual = "classico", modo = "escuro"),
+            contagens = listOf(
+                parar("a", "refrigerante", 1, custo = 6.5, tentativas = tent, recorde = 39).copy(deslizes = desl),
+                parar("b", "cigarro", 30, custo = 12.0, tentativas = tent, recorde = 5).copy(deslizes = desl),
+                parar("c", "doce", 7),
+                manter("d", "inglês", seq),
+                manter("e", "leitura", datas(1, 2, 3)),
+            ),
+        )
+        val reduzido = cheio.paraServidor()
+        assertEquals(Mensagens.compor(cheio, agora, sp), Mensagens.compor(reduzido, agora, sp))
+        assertTrue(reduzido.contagens.all { it.deslizes.isEmpty() && it.tentativas.all { t -> t.nota.isEmpty() } && it.tentativas.size <= 1 })
+        assertEquals(cheio.contagens.map { it.checkins.toSet() }, reduzido.contagens.map { it.checkins.toSet() })
+    }
 }

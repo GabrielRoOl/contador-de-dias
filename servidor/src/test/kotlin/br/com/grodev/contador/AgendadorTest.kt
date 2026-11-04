@@ -1,6 +1,7 @@
 package br.com.grodev.contador
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -235,5 +236,34 @@ class AgendadorTest {
         banco.salvarEstado("novo", "{}", "UTC", "09:00", agora - 100 * dia)
         assertEquals(1, agendador.limparInativos())
         assertNull(banco.obter("velho")); assertNotNull(banco.obter("novo"))
+    }
+
+    @Test fun `um erro grave numa rodada não mata o laço do agendador`() {
+        criar("d1")
+        agora = ms(2026, 11, 3, 9, 0)
+        banco.salvarEstado("d1", Json.encodeToString(Estado.serializer(), estadoComUmaContagem()), "America/Sao_Paulo", "09:00", agora) // recente: a limpeza de inativos não o apaga
+        var chamadas = 0
+        val enviadorQueFalha = EnviadorPush { _, _, _, _ ->
+            if (++chamadas == 1) throw OutOfMemoryError("simulado") else ResultadoEnvio.Sucesso
+        }
+        val ag = Agendador(banco, enviadorQueFalha, { agora }, despachante = Dispatchers.Unconfined, intervaloRodada = 20, esperaMinima = 5)
+        runBlocking {
+            val laco = kotlinx.coroutines.GlobalScope.launch { ag.rodar() }
+            val limite = System.currentTimeMillis() + 5_000
+            while (banco.obter("d1")!!.ultimoEnvio == null && System.currentTimeMillis() < limite) kotlinx.coroutines.delay(20)
+            laco.cancel()
+        }
+        assertTrue(chamadas >= 2, "depois do OutOfMemoryError a rodada seguinte ainda aconteceu (chamadas=$chamadas)")
+        assertEquals("2026-11-03", banco.obter("d1")!!.ultimoEnvio)
+    }
+
+    @Test fun `a limpeza também apaga dispositivos sem inscrição que ninguém usa`() {
+        val dia = Duration.ofDays(1).toMillis()
+        agora = ms(2026, 11, 3, 9, 0)
+        criar("orfao", inscrito = false); criar("ativo")
+        banco.salvarEstado("orfao", "{}", "UTC", "09:00", agora - 20 * dia)
+        banco.salvarEstado("ativo", "{}", "UTC", "09:00", agora - 20 * dia)
+        assertEquals(1, agendador.limparInativos())
+        assertNull(banco.obter("orfao")); assertNotNull(banco.obter("ativo"))
     }
 }

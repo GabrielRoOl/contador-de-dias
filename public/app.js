@@ -37,6 +37,17 @@
     return new Date(a.getFullYear(), a.getMonth(), a.getDate() - 1, a.getHours(), a.getMinutes()).getTime();
   }
 
+  /* ---------- notificações e espelho no servidor ---------- */
+  var sync = window.Sincronia.criar({
+    storage: window.localStorage,
+    navigator: navigator,
+    Notification: window.Notification,
+    PushManager: window.PushManager,
+    fetch: function (u, i) { return window.fetch(u, i); },
+    setTimeout: function (f, ms) { return window.setTimeout(f, ms); },
+    clearTimeout: function (t) { window.clearTimeout(t); }
+  });
+
   /* ---------- armazenamento ---------- */
   function carregar() {
     try {
@@ -56,7 +67,8 @@
   function persist() {
     if (somenteLeitura) return;
     try { estado = L.salvar(localStorage, estado, Date.now()); ui.erro = ''; }
-    catch (e) { ui.erro = 'Não foi possível salvar neste aparelho. Libere espaço ou verifique as permissões do navegador.'; }
+    catch (e) { ui.erro = 'Não foi possível salvar neste aparelho. Libere espaço ou verifique as permissões do navegador.'; return; }
+    sync.agendar(estado);
   }
   var metasTema = Array.prototype.slice.call(document.querySelectorAll('meta[name="theme-color"]'));
   /* A barra do navegador acompanha a cor de fundo realmente em uso, seja qual for o visual e o modo. */
@@ -109,7 +121,7 @@
     return '<span class="num' + (d >= 4 ? ' d4' : d === 3 ? ' d3' : '') + '">' + n + '</span>';
   }
 
-  function statHTML(rotulo, valor) { return '<div><dt>' + rotulo + '</dt><dd>' + valor + '</dd></div>'; }
+  function statHTML(rotulo, valor) { return '<div><dt>' + rotulo + '</dt><dd>' + esc(valor) + '</dd></div>'; }
 
   function liveParar(c, agora) {
     var t = L.calcular(c.inicio, agora);
@@ -154,9 +166,9 @@
   function painelAtivo(c, tipo) { return ui.painel && ui.painel.id === c.id && ui.painel.tipo === tipo; }
 
   function formDeslize(c) {
-    return '<form class="editform" data-form="deslize" data-id="' + c.id + '" novalidate>' +
+    return '<form class="editform" data-form="deslize" data-id="' + esc(c.id) + '" novalidate>' +
       '<p class="hint">Um deslize não zera a sua contagem. Só fica registrado.</p>' +
-      '<div class="field"><label for="ds-' + c.id + '">O que aconteceu? (opcional)</label><input id="ds-' + c.id + '" type="text" maxlength="200" autocomplete="off"></div>' +
+      '<div class="field"><label for="ds-' + esc(c.id) + '">O que aconteceu? (opcional)</label><input id="ds-' + esc(c.id) + '" type="text" maxlength="200" autocomplete="off"></div>' +
       '<div class="actions"><button class="btn small primary" type="submit">Registrar</button>' +
       '<button class="btn small" type="button" data-act="fechar">Cancelar</button></div></form>';
   }
@@ -165,35 +177,35 @@
     var agora = Date.now();
     var dias = L.calcular(c.inicio, agora).dias;
     var recorde = Math.max(c.recorde || 0, dias);
-    return '<form class="editform" data-form="recomeco" data-id="' + c.id + '" novalidate>' +
+    return '<form class="editform" data-form="recomeco" data-id="' + esc(c.id) + '" novalidate>' +
       '<p class="hint">Recomeçar faz parte. ' + esc(T.avisoRecomeco(dias, c.recorde || 0)) + '</p>' +
       '<fieldset class="radios"><legend class="sr">Quando você recomeçou</legend>' +
-      '<label><input type="radio" name="rq-' + c.id + '" value="agora" checked><span>Agora</span></label>' +
-      '<label><input type="radio" name="rq-' + c.id + '" value="ontem"><span>Ontem</span></label>' +
-      '<label><input type="radio" name="rq-' + c.id + '" value="outro"><span>Outro momento</span></label></fieldset>' +
-      '<div class="row2" data-outro hidden><div class="field"><label for="rd-' + c.id + '">Data</label><input id="rd-' + c.id + '" type="date" max="' + hoje() + '" value="' + hoje() + '"></div>' +
-      '<div class="field"><label for="rh-' + c.id + '">Hora</label><input id="rh-' + c.id + '" type="time" value="' + toTimeInput(agora) + '"></div></div>' +
-      '<div class="field"><label for="rn-' + c.id + '">O que pesou? (opcional)</label><input id="rn-' + c.id + '" type="text" maxlength="200" autocomplete="off"></div>' +
-      '<p class="error" id="re-' + c.id + '" role="alert"></p>' +
+      '<label><input type="radio" name="rq-' + esc(c.id) + '" value="agora" checked><span>Agora</span></label>' +
+      '<label><input type="radio" name="rq-' + esc(c.id) + '" value="ontem"><span>Ontem</span></label>' +
+      '<label><input type="radio" name="rq-' + esc(c.id) + '" value="outro"><span>Outro momento</span></label></fieldset>' +
+      '<div class="row2" data-outro hidden><div class="field"><label for="rd-' + esc(c.id) + '">Data</label><input id="rd-' + esc(c.id) + '" type="date" max="' + hoje() + '" value="' + hoje() + '"></div>' +
+      '<div class="field"><label for="rh-' + esc(c.id) + '">Hora</label><input id="rh-' + esc(c.id) + '" type="time" value="' + toTimeInput(agora) + '"></div></div>' +
+      '<div class="field"><label for="rn-' + esc(c.id) + '">O que pesou? (opcional)</label><input id="rn-' + esc(c.id) + '" type="text" maxlength="200" autocomplete="off"></div>' +
+      '<p class="error" id="re-' + esc(c.id) + '" role="alert"></p>' +
       '<div class="actions"><button class="btn small primary" type="submit">Recomeçar</button>' +
       '<button class="btn small" type="button" data-act="fechar">Cancelar</button></div></form>';
   }
 
   function formEditar(c) {
     var parar = c.tipo === 'parar';
-    return '<form class="editform" data-form="editar" data-id="' + c.id + '" novalidate>' +
-      '<div class="field"><label for="en-' + c.id + '">Nome</label><input id="en-' + c.id + '" type="text" maxlength="60" value="' + esc(c.nome) + '"></div>' +
-      (parar ? '<div class="row2"><div class="field"><label for="ed-' + c.id + '">Data de início</label><input id="ed-' + c.id + '" type="date" max="' + hoje() + '" value="' + L.dataLocal(c.inicio) + '"></div>' +
-        '<div class="field"><label for="et-' + c.id + '">Hora</label><input id="et-' + c.id + '" type="time" value="' + toTimeInput(c.inicio) + '"></div></div>' +
-        '<div class="field"><label for="ec-' + c.id + '">Custo por dia (opcional)</label><input id="ec-' + c.id + '" type="text" inputmode="decimal" value="' + (c.custoDia ? String(c.custoDia).replace('.', ',') : '') + '"></div>' : '') +
-      '<p class="error" id="ee-' + c.id + '" role="alert"></p>' +
+    return '<form class="editform" data-form="editar" data-id="' + esc(c.id) + '" novalidate>' +
+      '<div class="field"><label for="en-' + esc(c.id) + '">Nome</label><input id="en-' + esc(c.id) + '" type="text" maxlength="60" value="' + esc(c.nome) + '"></div>' +
+      (parar ? '<div class="row2"><div class="field"><label for="ed-' + esc(c.id) + '">Data de início</label><input id="ed-' + esc(c.id) + '" type="date" max="' + hoje() + '" value="' + L.dataLocal(c.inicio) + '"></div>' +
+        '<div class="field"><label for="et-' + esc(c.id) + '">Hora</label><input id="et-' + esc(c.id) + '" type="time" value="' + toTimeInput(c.inicio) + '"></div></div>' +
+        '<div class="field"><label for="ec-' + esc(c.id) + '">Custo por dia (opcional)</label><input id="ec-' + esc(c.id) + '" type="text" inputmode="decimal" value="' + (c.custoDia ? String(c.custoDia).replace('.', ',') : '') + '"></div>' : '') +
+      '<p class="error" id="ee-' + esc(c.id) + '" role="alert"></p>' +
       '<div class="actions"><button class="btn small primary" type="submit">Salvar</button>' +
       '<button class="btn small" type="button" data-act="fechar">Cancelar</button></div></form>';
   }
 
   function confirmarExcluir(c) {
     return '<div class="confirm"><p>Excluir &ldquo;' + esc(c.nome) + '&rdquo;? Isso não pode ser desfeito.</p>' +
-      '<div class="actions"><button class="btn small danger" type="button" data-act="do-delete" data-id="' + c.id + '">Excluir</button>' +
+      '<div class="actions"><button class="btn small danger" type="button" data-act="do-delete" data-id="' + esc(c.id) + '">Excluir</button>' +
       '<button class="btn small" type="button" data-act="fechar">Cancelar</button></div></div>';
   }
 
@@ -207,17 +219,17 @@
     if (c.tipo === 'manter') {
       var feito = c.checkins.indexOf(hoje()) !== -1;
       html += feito
-        ? '<div class="confirm"><p class="checkin-feito">Feito hoje.</p><div class="actions"><button class="btn small" type="button" data-act="desfazer-checkin" data-id="' + c.id + '">Desfazer</button></div></div>'
-        : '<button class="btn primary big" type="button" data-act="checkin" data-id="' + c.id + '">Hoje eu fiz</button>';
-      return html + '<div class="actions"><button class="btn small" type="button" data-act="painel" data-tipo="editar" data-id="' + c.id + '">Editar</button>' +
-        '<button class="btn small danger" type="button" data-act="painel" data-tipo="excluir" data-id="' + c.id + '">Excluir</button></div>';
+        ? '<div class="confirm"><p class="checkin-feito">Feito hoje.</p><div class="actions"><button class="btn small" type="button" data-act="desfazer-checkin" data-id="' + esc(c.id) + '">Desfazer</button></div></div>'
+        : '<button class="btn primary big" type="button" data-act="checkin" data-id="' + esc(c.id) + '">Hoje eu fiz</button>';
+      return html + '<div class="actions"><button class="btn small" type="button" data-act="painel" data-tipo="editar" data-id="' + esc(c.id) + '">Editar</button>' +
+        '<button class="btn small danger" type="button" data-act="painel" data-tipo="excluir" data-id="' + esc(c.id) + '">Excluir</button></div>';
     }
     return '<div class="actions">' +
-      '<button class="btn small" type="button" data-act="painel" data-tipo="deslize" data-id="' + c.id + '">Deslize</button>' +
-      '<button class="btn small" type="button" data-act="painel" data-tipo="recomeco" data-id="' + c.id + '">Recomecei</button>' +
-      '<button class="btn small" type="button" data-act="historico" data-id="' + c.id + '" aria-expanded="' + (ui.historico[c.id] ? 'true' : 'false') + '">Histórico</button>' +
-      '<button class="btn small" type="button" data-act="painel" data-tipo="editar" data-id="' + c.id + '">Editar</button>' +
-      '<button class="btn small danger" type="button" data-act="painel" data-tipo="excluir" data-id="' + c.id + '">Excluir</button></div>';
+      '<button class="btn small" type="button" data-act="painel" data-tipo="deslize" data-id="' + esc(c.id) + '">Deslize</button>' +
+      '<button class="btn small" type="button" data-act="painel" data-tipo="recomeco" data-id="' + esc(c.id) + '">Recomecei</button>' +
+      '<button class="btn small" type="button" data-act="historico" data-id="' + esc(c.id) + '" aria-expanded="' + (ui.historico[c.id] ? 'true' : 'false') + '">Histórico</button>' +
+      '<button class="btn small" type="button" data-act="painel" data-tipo="editar" data-id="' + esc(c.id) + '">Editar</button>' +
+      '<button class="btn small danger" type="button" data-act="painel" data-tipo="excluir" data-id="' + esc(c.id) + '">Excluir</button></div>';
   }
 
   function historicoHTML(c) {
@@ -234,7 +246,7 @@
 
   function cardHTML(c, exemplo) {
     var desde = c.tipo === 'manter' ? 'Desde ' + fmtData.format(new Date(c.inicio)) : 'Desde ' + fmtDataHora.format(new Date(c.inicio));
-    var corpo = '<div class="live"' + (exemplo ? ' data-exemplo="1"' : ' data-id="' + c.id + '"') + '>' + liveHTML(c, Date.now()) + '</div>';
+    var corpo = '<div class="live"' + (exemplo ? ' data-exemplo="1"' : ' data-id="' + esc(c.id) + '"') + '>' + liveHTML(c, Date.now()) + '</div>';
     if (!exemplo) {
       corpo += acoesHTML(c);
       if (c.tipo === 'parar' && ui.historico[c.id]) corpo += historicoHTML(c);
@@ -299,14 +311,168 @@
     document.getElementById('f-name').focus();
   });
 
+  var notif = { ocupado: false, erro: '', pedeConvite: false };
+  var MSG_NOTIF = {
+    'nao-suportado': 'Este navegador não mostra notificações do app. No Chrome do Android, instale o app na tela inicial.',
+    bloqueado: 'As notificações estão bloqueadas para este site. Libere nas configurações do navegador para ativar.',
+    desligado: 'Receba um resumo por dia no horário escolhido acima.'
+  };
+  var ERRO_ATIVAR = {
+    dispensado: 'Sem a permissão o app não consegue avisar. Você pode tentar de novo quando quiser.',
+    rede: 'Sem conexão com o servidor agora. Suas contagens continuam salvas aqui; tente de novo mais tarde.',
+    limite: 'Muitas tentativas deste endereço. Tente de novo mais tarde.',
+    'servidor-cheio': 'O servidor está sem espaço agora e não aceita este aparelho. Tente de novo mais tarde.',
+    'servidor-sem-push': 'O servidor não está com as notificações configuradas.',
+    inscricao: 'Não consegui registrar este aparelho para as notificações. Tente de novo.',
+    servidor: 'O servidor não respondeu como esperado. Tente de novo mais tarde.',
+    convite: 'Este servidor pede um código de convite. Digite o código e toque de novo.',
+    'convite-invalido': 'Código de convite inválido.'
+  };
+  var ERRO_DESATIVAR = {
+    rede: 'Sem conexão: não consegui apagar a cópia do servidor. Tente de novo com internet.',
+    servidor: 'O servidor não respondeu como esperado. Tente de novo mais tarde.'
+  };
+  function renderNotif() {
+    var st = sync.status();
+    var texto = document.getElementById('a-notif-texto');
+    var botao = document.getElementById('a-notif-botao');
+    var semBotao = st === 'nao-suportado' || st === 'bloqueado';
+    if (notif.ocupado) texto.textContent = 'Aguarde…';
+    else if (st === 'ativo') texto.textContent = 'Ativas. Você recebe um resumo por dia às ' + estado.preferencias.horaResumo + '.';
+    else texto.textContent = MSG_NOTIF[st];
+    document.getElementById('a-notif-erro').textContent = semBotao ? '' : notif.erro;
+    document.getElementById('a-notif-nota').hidden = semBotao;
+    document.getElementById('a-convite').hidden = semBotao || st === 'ativo' || !notif.pedeConvite;
+    botao.hidden = semBotao;
+    botao.disabled = notif.ocupado;
+    botao.textContent = st === 'ativo' ? 'Desativar' : (notif.erro ? 'Tentar de novo' : 'Ativar notificações');
+  }
+  /* Só roda por um toque no botão: é aqui que o navegador pergunta a permissão, nunca ao abrir o app. */
+  document.getElementById('a-notif-botao').addEventListener('click', function () {
+    if (notif.ocupado) return;
+    var desativando = sync.status() === 'ativo';
+    notif.ocupado = true; notif.erro = '';
+    renderNotif();
+    var campoConvite = document.getElementById('a-convite-campo');
+    var codigo = campoConvite.value.trim();
+    (desativando ? sync.desativar() : sync.ativar(estado, codigo || undefined)).then(function (r) {
+      notif.ocupado = false;
+      if (!r.ok) notif.erro = (desativando ? ERRO_DESATIVAR : ERRO_ATIVAR)[r.motivo] || ERRO_ATIVAR.servidor;
+      var pede = !r.ok && (r.motivo === 'convite' || r.motivo === 'convite-invalido');
+      if (r.ok) campoConvite.value = '';
+      notif.pedeConvite = pede; // o campo só aparece quando o servidor pede (e some ao ativar)
+      renderNotif();
+      atualizarConvites();
+      if (pede) campoConvite.focus();
+    });
+  });
+  sync.ouvir(renderNotif);
+
+  /* ---------- convites (só aparece no aparelho administrador) ---------- */
+  var painelConvites = document.getElementById('a-convites');
+  var ERRO_CONVITE = {
+    pendentes: 'Já há 10 convites pendentes. Revogue algum ou espere vencer.',
+    nome: 'Escreva o nome de quem vai receber (até 40 letras).',
+    limite: 'Muitos convites seguidos. Tente de novo mais tarde.',
+    rede: 'Sem conexão com o servidor agora.',
+    servidor: 'O servidor não respondeu como esperado.',
+    inativo: 'Ative as notificações neste aparelho para gerenciar convites.'
+  };
+  var codigoAtual = '';
+  var fmtDia = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short' });
+  function esconderCodigo() {
+    codigoAtual = '';
+    document.getElementById('a-convite-codigo').textContent = '';
+    document.getElementById('a-convite-novo').hidden = true;
+  }
+  function textoConvite(c) {
+    if (c.estado === 'pendente') return 'Pendente, vence ' + fmtDia.format(new Date(c.expiraEm));
+    if (c.estado === 'usado') return 'Usado em ' + fmtDia.format(new Date(c.usadoEm));
+    if (c.estado === 'expirado') return 'Expirado';
+    return 'Revogado';
+  }
+  function desenharConvites(lista) {
+    var ul = document.getElementById('a-convites-lista');
+    ul.textContent = '';
+    lista.forEach(function (c) {
+      var li = document.createElement('li');
+      var info = document.createElement('span'); info.className = 'info';
+      var nome = document.createElement('span'); nome.textContent = c.nome;
+      var estado = document.createElement('span'); estado.className = 'quando'; estado.textContent = textoConvite(c);
+      info.appendChild(nome); info.appendChild(estado); li.appendChild(info);
+      if (c.estado === 'pendente' || c.estado === 'usado') {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn small danger';
+        var rotulo = c.estado === 'usado' ? 'Remover aparelho' : 'Revogar';
+        b.textContent = rotulo;
+        var armado = null;
+        b.addEventListener('click', function () {
+          if (!armado) { // segundo toque confirma, sem janela de confirmação
+            b.textContent = 'Confirmar?';
+            armado = setTimeout(function () { armado = null; b.textContent = rotulo; }, 4000);
+            return;
+          }
+          clearTimeout(armado); b.disabled = true;
+          sync.revogarConvite(c.id).then(function (r) {
+            if (!r.ok) document.getElementById('a-convites-erro').textContent = ERRO_CONVITE[r.motivo] || ERRO_CONVITE.servidor;
+            atualizarConvites();
+          });
+        });
+        li.appendChild(b);
+      }
+      ul.appendChild(li);
+    });
+  }
+  /* Pergunta ao servidor se este aparelho é administrador; o painel só aparece se for. */
+  function atualizarConvites() {
+    if (sync.status() !== 'ativo') { painelConvites.hidden = true; esconderCodigo(); return Promise.resolve(); }
+    return sync.convites().then(function (r) {
+      painelConvites.hidden = !(r.ok && r.admin);
+      if (r.ok && r.admin) desenharConvites(r.lista); else esconderCodigo();
+    });
+  }
+  document.getElementById('a-convite-gerar').addEventListener('click', function () {
+    var campo = document.getElementById('a-convite-nome');
+    var erro = document.getElementById('a-convites-erro');
+    var botao = document.getElementById('a-convite-gerar');
+    erro.textContent = '';
+    botao.disabled = true;
+    sync.criarConvite(campo.value.trim()).then(function (r) {
+      botao.disabled = false;
+      if (!r.ok) { erro.textContent = ERRO_CONVITE[r.motivo] || ERRO_CONVITE.servidor; return; }
+      campo.value = '';
+      codigoAtual = r.convite.codigo; // só na memória desta tela: fecha os Ajustes e some
+      document.getElementById('a-convite-codigo').textContent = codigoAtual;
+      document.getElementById('a-convite-novo').hidden = false;
+      atualizarConvites();
+    });
+  });
+  function mensagemConvite() {
+    var url = location.origin + location.pathname.replace(/[^\/]*$/, '');
+    return 'Convite para o Contador de Dias: ' + codigoAtual + '\nVale 7 dias e só pode ser usado uma vez.\nAbra ' + url +
+      ', toque na engrenagem (Ajustes), em "Ativar notificações" e digite o código.';
+  }
+  document.getElementById('a-convite-compartilhar').addEventListener('click', function () {
+    if (!codigoAtual) return;
+    if (navigator.share) { navigator.share({ title: 'Convite para o Contador de Dias', text: mensagemConvite() }).catch(function () {}); return; }
+    if (navigator.clipboard) navigator.clipboard.writeText(mensagemConvite()).catch(function () {});
+  });
+  document.getElementById('a-convite-copiar').addEventListener('click', function () {
+    if (codigoAtual && navigator.clipboard) navigator.clipboard.writeText(codigoAtual).catch(function () {});
+  });
+
   var dialogo = document.getElementById('ajustes');
   document.getElementById('toggle-ajustes').addEventListener('click', function () {
     document.getElementById('a-hora').value = estado.preferencias.horaResumo;
     marcarOpcao('a-modo', estado.preferencias.modo);
     marcarOpcao('a-visual', estado.preferencias.visual);
     document.getElementById('a-fuso').textContent = 'Fuso do aparelho: ' + estado.preferencias.fuso + '.';
+    notif.erro = '';
+    renderNotif();
+    atualizarConvites();
     dialogo.showModal();
   });
+  dialogo.addEventListener('close', function () { document.getElementById('a-convite-campo').value = ''; esconderCodigo(); document.getElementById('a-convites-erro').textContent = ''; });
   [dialogoNova, dialogo].forEach(function (d) {
     d.addEventListener('click', function (e) {
       if (e.target === d || e.target.closest('[data-fechar-dialogo]')) d.close();
@@ -332,7 +498,7 @@
   });
 
   document.getElementById('a-hora').addEventListener('change', function (e) {
-    if (/^\d{2}:\d{2}$/.test(e.target.value)) { estado.preferencias.horaResumo = e.target.value; persist(); }
+    if (/^\d{2}:\d{2}$/.test(e.target.value)) { estado.preferencias.horaResumo = e.target.value; persist(); renderNotif(); }
   });
 
   document.querySelectorAll('input[name="f-tipo"]').forEach(function (r) { r.addEventListener('change', ajustarFormulario); });
@@ -440,7 +606,13 @@
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', sincronizarCorBarra);
   render();
   setInterval(tick, 15000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) sync.descarregar();
+    else { tick(); sync.retomar(estado); }
+  });
+  window.addEventListener('online', function () { sync.retomar(estado); });
+  sync.retomar(estado);
+  sync.verificar();
 
   /* Pede ao Chrome para não apagar os dados do app e registra o modo offline */
   if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(function () {}); }
