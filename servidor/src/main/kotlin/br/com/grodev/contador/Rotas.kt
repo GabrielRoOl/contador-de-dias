@@ -43,6 +43,7 @@ import java.security.MessageDigest
 @Serializable data class PedidoConvite(val nome: String)
 @Serializable data class RespostaConviteCriado(val id: String, val codigo: String, val expiraEm: Long)
 @Serializable data class ItemConvite(val id: String, val nome: String, val estado: String, val criadoEm: Long, val expiraEm: Long, val usadoEm: Long? = null)
+@Serializable data class PedidoAlarme(val em: Long, val fase: String, val proxima: String)
 @Serializable data class RespostaErro(val erro: String, val detalhes: List<String> = emptyList())
 @Serializable data class ChavesInscricao(val p256dh: String, val auth: String)
 @Serializable data class InscricaoPush(val endpoint: String, val keys: ChavesInscricao)
@@ -56,6 +57,10 @@ const val LIMITE_CRIACAO_CONVITES_POR_HORA = 20
 const val MAX_CONVITES_PENDENTES = 10
 const val VALIDADE_CONVITE_MS = 7L * 24 * 3_600_000
 private const val MAX_CORPO_CONVITE = 1024
+private const val MAX_CORPO_ALARME = 512
+const val LIMITE_ALARME_POR_HORA = 120
+const val ALARME_ATRASO_MAX_MS = 60_000L
+const val ALARME_ANTECEDENCIA_MAX_MS = 2L * 3_600_000
 
 private val json = Json { ignoreUnknownKeys = true }
 private val log = LoggerFactory.getLogger("rotas")
@@ -139,6 +144,7 @@ fun Application.modulo(
     limiteCriacao: LimitadorTaxa = LimitadorTaxa(LIMITE_CRIACAO_POR_HORA, 3_600_000, relogio),
     limiteConvite: LimitadorTaxa = LimitadorTaxa(LIMITE_CONVITE_POR_HORA, 3_600_000, relogio),
     limiteNovosConvites: LimitadorTaxa = LimitadorTaxa(LIMITE_CRIACAO_CONVITES_POR_HORA, 3_600_000, relogio),
+    limiteAlarme: LimitadorTaxa = LimitadorTaxa(LIMITE_ALARME_POR_HORA, 3_600_000, relogio),
 ) {
     install(cabecalhosPadrao(PoliticaCsp(config.pastaEstatica)))
     install(ContentNegotiation) { json(Json { encodeDefaults = true }) }
@@ -253,6 +259,40 @@ fun Application.modulo(
                     if (!EndpointPush.chavesValidas(insc.keys.p256dh, insc.keys.auth)) return@put call.erro(HttpStatusCode.BadRequest, "Chaves da inscrição inválidas.")
                     banco.salvarInscricao(d.id, insc.endpoint, insc.keys.p256dh, insc.keys.auth, relogio())
                     call.respond(HttpStatusCode.NoContent)
+                }
+
+                route("/alarme") {
+                    /** Substitui o alarme do Pomodoro: `em` é o fim da fase (ms), `proxima` serve só para escolher o texto. */
+                    put {
+                        val d = autenticar(call, call.parameters["id"]) ?: return@put
+                        if (chaves == null) return@put call.erro(HttpStatusCode.ServiceUnavailable, "Notificações não configuradas neste servidor.")
+                        if (!call.ehJson()) return@put call.erro(HttpStatusCode.UnsupportedMediaType, "Envie application/json.")
+                        val texto = call.corpoLimitado(MAX_CORPO_ALARME) ?: return@put call.erro(HttpStatusCode.PayloadTooLarge, "Corpo grande demais.")
+                        val pedido = try { json.decodeFromString(PedidoAlarme.serializer(), texto) } catch (e: Exception) {
+                            return@put call.erro(HttpStatusCode.BadRequest, "JSON inválido.")
+                        }
+                        if (pedido.fase !in MensagensPomodoro.FASES || pedido.proxima !in MensagensPomodoro.FASES) return@put call.erro(HttpStatusCode.BadRequest, "Fase inválida.")
+                        val agora = relogio()
+                        if (pedido.em < agora - ALARME_ATRASO_MAX_MS || pedido.em > agora + ALARME_ANTECEDENCIA_MAX_MS) return@put call.erro(HttpStatusCode.BadRequest, "Horário do alarme fora do permitido.")
+                        if (!d.temInscricao) return@put call.erro(HttpStatusCode.Conflict, "Este aparelho não tem inscrição de push.")
+                        if (!limiteAlarme.permitir("alarme:" + d.id)) {
+                            call.response.header(HttpHeaders.RetryAfter, "3600")
+                            return@put call.erro(HttpStatusCode.TooManyRequests, "Muitas alterações de alarme. Tente mais tarde.")
+                        }
+                        banco.definirAlarme(d.id, pedido.em, pedido.fase, pedido.proxima)
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+
+                    /** Idempotente: sem alarme também responde 204. */
+                    delete {
+                        val d = autenticar(call, call.parameters["id"]) ?: return@delete
+                        if (!limiteAlarme.permitir("alarme:" + d.id)) {
+                            call.response.header(HttpHeaders.RetryAfter, "3600")
+                            return@delete call.erro(HttpStatusCode.TooManyRequests, "Muitas alterações de alarme. Tente mais tarde.")
+                        }
+                        banco.cancelarAlarme(d.id)
+                        call.respond(HttpStatusCode.NoContent)
+                    }
                 }
 
                 route("/convites") {

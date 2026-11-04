@@ -56,9 +56,10 @@ class RotasTest {
         geral: LimitadorTaxa = LimitadorTaxa(10_000, 60_000) { agora },
         criacao: LimitadorTaxa = LimitadorTaxa(10_000, 3_600_000) { agora },
         tentativasConvite: LimitadorTaxa = LimitadorTaxa(10_000, 3_600_000) { agora },
+        alarmes: LimitadorTaxa = LimitadorTaxa(10_000, 3_600_000) { agora },
         bloco: suspend ApplicationTestBuilder.(HttpClient) -> Unit,
     ) = testApplication {
-        application { modulo(c, banco, vapid, { agora }, geral, criacao, tentativasConvite) }
+        application { modulo(c, banco, vapid, { agora }, geral, criacao, tentativasConvite, limiteAlarme = alarmes) }
         bloco(createClient { followRedirects = false })
     }
 
@@ -584,5 +585,96 @@ class RotasTest {
         assertEquals(HttpStatusCode.Created, c.cadastra("qualquer").status)
         val (id, seg) = c.novo()
         assertEquals(HttpStatusCode.Forbidden, c.gerarConvite(id to seg).status, "ninguém é administrador")
+    }
+
+    // ---------------------------------------------------------------- alarme do Pomodoro
+
+    private fun pedidoAlarme(em: Long, fase: String = "foco", proxima: String = "pausa") = """{"em":$em,"fase":"$fase","proxima":"$proxima"}"""
+
+    private suspend fun HttpClient.inscrito(): Pair<String, String> {
+        val (id, segredo) = novo()
+        assertEquals(HttpStatusCode.NoContent, putJson("/contador/api/dispositivos/$id/push", inscricaoOk(), segredo).status)
+        return id to segredo
+    }
+
+    @Test fun `grava o alarme e DELETE cancela`() = comApp { c ->
+        val (id, segredo) = c.inscrito()
+        val em = agora + 25 * 60_000
+        assertEquals(HttpStatusCode.NoContent, c.putJson("/contador/api/dispositivos/$id/alarme", pedidoAlarme(em), segredo).status)
+        assertEquals(em to "foco", banco.alarmeDe(id))
+        val r = c.delete("/contador/api/dispositivos/$id/alarme") { header(HttpHeaders.Authorization, "Bearer $segredo") }
+        assertEquals(HttpStatusCode.NoContent, r.status)
+        assertNull(banco.alarmeDe(id))
+    }
+
+    @Test fun `um segundo alarme substitui o primeiro`() = comApp { c ->
+        val (id, segredo) = c.inscrito()
+        c.putJson("/contador/api/dispositivos/$id/alarme", pedidoAlarme(agora + 60_000), segredo)
+        c.putJson("/contador/api/dispositivos/$id/alarme", pedidoAlarme(agora + 300_000, "pausa", "foco"), segredo)
+        assertEquals((agora + 300_000) to "pausa", banco.alarmeDe(id))
+    }
+
+    @Test fun `cancelar sem alarme também responde 204`() = comApp { c ->
+        val (id, segredo) = c.inscrito()
+        assertEquals(HttpStatusCode.NoContent, c.delete("/contador/api/dispositivos/$id/alarme") { header(HttpHeaders.Authorization, "Bearer $segredo") }.status)
+    }
+
+    @Test fun `alarme exige o segredo do dispositivo`() = comApp { c ->
+        val (id, _) = c.inscrito()
+        val (_, outro) = c.novo()
+        assertEquals(HttpStatusCode.Unauthorized, c.putJson("/contador/api/dispositivos/$id/alarme", pedidoAlarme(agora + 60_000), null).status)
+        assertEquals(HttpStatusCode.Unauthorized, c.putJson("/contador/api/dispositivos/$id/alarme", pedidoAlarme(agora + 60_000), outro).status)
+        assertEquals(HttpStatusCode.Unauthorized, c.delete("/contador/api/dispositivos/$id/alarme").status)
+        assertNull(banco.alarmeDe(id))
+    }
+
+    @Test fun `alarme recusa horário fora da janela, fase desconhecida e corpo ruim`() = comApp { c ->
+        val (id, segredo) = c.inscrito()
+        val url = "/contador/api/dispositivos/$id/alarme"
+        listOf(
+            pedidoAlarme(agora - 61_000), pedidoAlarme(agora + 2 * 3_600_000 + 1_000), pedidoAlarme(0),
+            pedidoAlarme(agora + 60_000, "descanso"), pedidoAlarme(agora + 60_000, "foco", "x"),
+            """{"em":"amanhã","fase":"foco","proxima":"pausa"}""", """{"fase":"foco","proxima":"pausa"}""", "[]", "nada",
+        ).forEach { assertEquals(HttpStatusCode.BadRequest, c.putJson(url, it, segredo).status, it) }
+        assertNull(banco.alarmeDe(id))
+        assertEquals(HttpStatusCode.UnsupportedMediaType, c.putJson(url, pedidoAlarme(agora + 60_000), segredo, ContentType.Text.Plain).status)
+        assertEquals(HttpStatusCode.PayloadTooLarge, c.putJson(url, pedidoAlarme(agora + 60_000) + " ".repeat(600), segredo).status)
+    }
+
+    @Test fun `aceita um alarme que acabou de vencer (relógio do aparelho um pouco atrás)`() = comApp { c ->
+        val (id, segredo) = c.inscrito()
+        assertEquals(HttpStatusCode.NoContent, c.putJson("/contador/api/dispositivos/$id/alarme", pedidoAlarme(agora - 30_000), segredo).status)
+    }
+
+    @Test fun `sem inscrição de push o alarme dá 409, sem VAPID dá 503`() {
+        comApp { c ->
+            val (id, segredo) = c.novo()
+            assertEquals(HttpStatusCode.Conflict, c.putJson("/contador/api/dispositivos/$id/alarme", pedidoAlarme(agora + 60_000), segredo).status)
+        }
+        comApp(vapid = null) { c ->
+            val (id, segredo) = c.novo()
+            assertEquals(HttpStatusCode.ServiceUnavailable, c.putJson("/contador/api/dispositivos/$id/alarme", pedidoAlarme(agora + 60_000), segredo).status)
+        }
+    }
+
+    @Test fun `limite de alterações de alarme por dispositivo`() = comApp(alarmes = LimitadorTaxa(2, 3_600_000) { agora }) { c ->
+        val (id, segredo) = c.inscrito()
+        val url = "/contador/api/dispositivos/$id/alarme"
+        repeat(2) { assertEquals(HttpStatusCode.NoContent, c.putJson(url, pedidoAlarme(agora + 60_000), segredo).status) }
+        val r = c.putJson(url, pedidoAlarme(agora + 60_000), segredo)
+        assertEquals(HttpStatusCode.TooManyRequests, r.status)
+        assertEquals("3600", r.headers[HttpHeaders.RetryAfter])
+        assertEquals(HttpStatusCode.TooManyRequests, c.delete(url) { header(HttpHeaders.Authorization, "Bearer $segredo") }.status)
+    }
+
+    @Test fun `trocar a inscrição de aparelho leva o alarme embora, e apagar o dispositivo também`() = comApp { c ->
+        val (a, segA) = c.inscrito()
+        c.putJson("/contador/api/dispositivos/$a/alarme", pedidoAlarme(agora + 60_000), segA)
+        val (b, segB) = c.novo()
+        c.putJson("/contador/api/dispositivos/$b/push", inscricaoOk(), segB) // mesmo endpoint: B rouba de A
+        assertNull(banco.alarmeDe(a))
+        c.putJson("/contador/api/dispositivos/$b/alarme", pedidoAlarme(agora + 60_000), segB)
+        assertEquals(HttpStatusCode.NoContent, c.delete("/contador/api/dispositivos/$b") { header(HttpHeaders.Authorization, "Bearer $segB") }.status)
+        assertNull(banco.alarmeDe(b))
     }
 }

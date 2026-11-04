@@ -42,6 +42,7 @@ fun main(args: Array<String>) {
     if (chaves != null) {
         val agendador = Agendador(banco, EnviadorWebPush(chaves, config.assuntoVapid))
         escopo.launch { agendador.rodar() }
+        escopo.launch { AgendadorAlarmes(banco, EnviadorWebPush(chaves, config.assuntoVapid)).rodar() }
     }
 
     val servidor = embeddedServer(CIO, port = config.porta, host = config.endereco) { modulo(config, banco, chaves) }

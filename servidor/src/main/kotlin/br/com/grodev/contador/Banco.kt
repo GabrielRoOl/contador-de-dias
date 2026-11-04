@@ -14,6 +14,9 @@ class Convite(val id: String, val nome: String, val criadoEm: Long, val expiraEm
     }
 }
 
+/** Alarme do Pomodoro que já venceu e está pronto para ser enviado. */
+class AlarmeVencido(val id: String, val inscricao: Inscricao, val em: Long, val fase: String, val proxima: String, val tentativas: Int)
+
 class Dispositivo(
     val id: String,
     val segredoHash: ByteArray,
@@ -111,6 +114,16 @@ class Banco(private val caminho: String) {
                 it.execute("PRAGMA user_version = 4")
             }
         }
+        if (versao < 5) {
+            c.createStatement().use {
+                // Alarme do Pomodoro: um por dispositivo, sem nomes de contagens. `alarme_tentativas` conta as falhas de envio.
+                it.execute("ALTER TABLE dispositivos ADD COLUMN alarme_em INTEGER")
+                it.execute("ALTER TABLE dispositivos ADD COLUMN alarme_fase TEXT")
+                it.execute("ALTER TABLE dispositivos ADD COLUMN alarme_proxima TEXT")
+                it.execute("ALTER TABLE dispositivos ADD COLUMN alarme_tentativas INTEGER NOT NULL DEFAULT 0")
+                it.execute("PRAGMA user_version = 5")
+            }
+        }
     }
 
     /** Esvazia o WAL, onde ainda ficam as versões antigas das páginas, depois de apagar dados pessoais. */
@@ -161,7 +174,7 @@ class Banco(private val caminho: String) {
     fun salvarInscricao(id: String, endpoint: String, p256dh: String, auth: String, agora: Long): Boolean = usar { c ->
         c.autoCommit = false
         try {
-            c.prepareStatement("UPDATE dispositivos SET push_endpoint = NULL, push_p256dh = NULL, push_auth = NULL WHERE push_endpoint = ? AND id <> ?").use {
+            c.prepareStatement("UPDATE dispositivos SET push_endpoint = NULL, push_p256dh = NULL, push_auth = NULL, alarme_em = NULL, alarme_fase = NULL, alarme_proxima = NULL, alarme_tentativas = 0 WHERE push_endpoint = ? AND id <> ?").use {
                 it.setString(1, endpoint); it.setString(2, id); it.executeUpdate()
             }
             val ok = c.prepareStatement(
@@ -178,7 +191,7 @@ class Banco(private val caminho: String) {
     }
 
     fun removerInscricao(id: String) = usar { c ->
-        c.prepareStatement("UPDATE dispositivos SET push_endpoint = NULL, push_p256dh = NULL, push_auth = NULL WHERE id = ?").use {
+        c.prepareStatement("UPDATE dispositivos SET push_endpoint = NULL, push_p256dh = NULL, push_auth = NULL, alarme_em = NULL, alarme_fase = NULL, alarme_proxima = NULL, alarme_tentativas = 0 WHERE id = ?").use {
             it.setString(1, id); it.executeUpdate()
         }
     }
@@ -220,6 +233,55 @@ class Banco(private val caminho: String) {
             "UPDATE dispositivos SET tentativas = CASE WHEN tentativa_data = ? THEN tentativas + 1 ELSE 1 END, tentativa_data = ?, proxima_tentativa = ? WHERE id = ?",
         ).use {
             it.setString(1, dataLocal); it.setString(2, dataLocal); it.setLong(3, proxima); it.setString(4, id); it.executeUpdate()
+        }
+    }
+
+    // ---------------------------------------------------------------- alarme do Pomodoro
+
+    /** Substitui o alarme do dispositivo (só existe um por vez). */
+    fun definirAlarme(id: String, em: Long, fase: String, proxima: String): Boolean = usar { c ->
+        c.prepareStatement("UPDATE dispositivos SET alarme_em = ?, alarme_fase = ?, alarme_proxima = ?, alarme_tentativas = 0 WHERE id = ?").use {
+            it.setLong(1, em); it.setString(2, fase); it.setString(3, proxima); it.setString(4, id)
+            it.executeUpdate() == 1
+        }
+    }
+
+    fun cancelarAlarme(id: String) = usar { c ->
+        c.prepareStatement("UPDATE dispositivos SET alarme_em = NULL, alarme_fase = NULL, alarme_proxima = NULL, alarme_tentativas = 0 WHERE id = ?").use {
+            it.setString(1, id); it.executeUpdate()
+        }
+    }
+
+    /** Alarmes cujo horário chegou, de quem tem inscrição de push. */
+    fun alarmesVencidos(agora: Long): List<AlarmeVencido> = usar { c ->
+        c.prepareStatement(
+            "SELECT id, push_endpoint, push_p256dh, push_auth, alarme_em, alarme_fase, alarme_proxima, alarme_tentativas FROM dispositivos " +
+                "WHERE alarme_em IS NOT NULL AND alarme_em <= ? AND push_endpoint IS NOT NULL ORDER BY alarme_em",
+        ).use { ps ->
+            ps.setLong(1, agora)
+            ps.executeQuery().use { rs ->
+                buildList {
+                    while (rs.next()) add(AlarmeVencido(rs.getString(1), Inscricao(rs.getString(2), rs.getString(3), rs.getString(4)), rs.getLong(5), rs.getString(6), rs.getString(7), rs.getInt(8)))
+                }
+            }
+        }
+    }
+
+    fun registrarFalhaAlarme(id: String) = usar { c ->
+        c.prepareStatement("UPDATE dispositivos SET alarme_tentativas = alarme_tentativas + 1 WHERE id = ?").use { it.setString(1, id); it.executeUpdate() }
+    }
+
+    /** Alarme que já passou do ponto de ser útil (ou ficou sem inscrição) não serve mais: apaga. Devolve quantos. */
+    fun limparAlarmesAntigos(antes: Long): Int = usar { c ->
+        c.prepareStatement("UPDATE dispositivos SET alarme_em = NULL, alarme_fase = NULL, alarme_proxima = NULL, alarme_tentativas = 0 WHERE alarme_em IS NOT NULL AND alarme_em < ?").use {
+            it.setLong(1, antes); it.executeUpdate()
+        }
+    }
+
+    fun alarmeDe(id: String): Pair<Long, String>? = usar { c ->
+        c.prepareStatement("SELECT alarme_em, alarme_fase FROM dispositivos WHERE id = ? AND alarme_em IS NOT NULL").use {
+            it.setString(1, id)
+            it.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) to rs.getString(2) else null }
         }
     }
 
