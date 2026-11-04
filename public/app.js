@@ -46,6 +46,7 @@
       somenteLeitura = true;
       ui.erro = 'Não consegui ler seus dados salvos (' + e.message + '). Nada foi apagado nem será sobrescrito.';
     }
+    aplicarVisual(estado.preferencias.visual);
     if (!somenteLeitura && estado.preferencias.fuso !== fusoLocal()) {
       estado.preferencias.fuso = fusoLocal();
       persist();
@@ -56,6 +57,7 @@
     try { estado = L.salvar(localStorage, estado, Date.now()); ui.erro = ''; }
     catch (e) { ui.erro = 'Não foi possível salvar neste aparelho. Libere espaço ou verifique as permissões do navegador.'; }
   }
+  function aplicarVisual(v) { document.documentElement.setAttribute('data-visual', v); }
   function achar(id) { return estado.contagens.filter(function (c) { return c.id === id; })[0]; }
   function substituir(nova) {
     estado.contagens = estado.contagens.map(function (c) { return c.id === nova.id ? nova : c; });
@@ -282,12 +284,22 @@
   var dialogo = document.getElementById('ajustes');
   document.getElementById('toggle-ajustes').addEventListener('click', function () {
     document.getElementById('a-hora').value = estado.preferencias.horaResumo;
+    document.querySelector('input[name="a-visual"][value="' + estado.preferencias.visual + '"]').checked = true;
     document.getElementById('a-fuso').textContent = 'Fuso do aparelho: ' + estado.preferencias.fuso + '.';
     dialogo.showModal();
   });
   [dialogoNova, dialogo].forEach(function (d) {
     d.addEventListener('click', function (e) {
       if (e.target === d || e.target.closest('[data-fechar-dialogo]')) d.close();
+    });
+  });
+
+  document.querySelectorAll('input[name="a-visual"]').forEach(function (r) {
+    r.addEventListener('change', function (e) {
+      if (L.VISUAIS.indexOf(e.target.value) === -1) return;
+      estado.preferencias.visual = e.target.value;
+      aplicarVisual(e.target.value);
+      persist();
     });
   });
 

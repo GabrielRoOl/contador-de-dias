@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="app.css">
-</script>
+<script>try{var v=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias.visual;if(v)document.documentElement.setAttribute('data-visual',v)}catch(e){}</script>
 </head>
 <body>
 <main class="wrap">
@@ -78,6 +78,14 @@
       <button class="icone-btn" type="button" data-fechar-dialogo aria-label="Fechar ajustes">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
+    </div>
+    <div class="field">
+      <span class="rotulo" id="a-visual-rotulo">Visual</span>
+      <div class="seg" role="radiogroup" aria-labelledby="a-visual-rotulo">
+        <label><input type="radio" name="a-visual" value="futurista"><span>Futurista</span></label>
+        <label><input type="radio" name="a-visual" value="classico"><span>Clássico</span></label>
+      </div>
+      <p class="hint">Futurista tem brilho e vidro. Clássico é liso e simples.</p>
     </div>
     <div class="field">
       <label for="a-hora">Horário do resumo diário</label>

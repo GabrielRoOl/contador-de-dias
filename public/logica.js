@@ -8,6 +8,7 @@
   var CHAVE_V1 = 'contagem-de-dias:v1';
   var CHAVE_V2 = 'contagem-de-dias:v2';
   var TIPOS = ['parar', 'manter'];
+  var VISUAIS = ['futurista', 'classico'];
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function plural(n, a, b) { return n === 1 ? a : b; }
@@ -223,7 +224,16 @@
 
   /* ---------- estado, migração e armazenamento ---------- */
   function preferenciasPadrao(fuso) {
-    return { horaResumo: '09:00', fuso: fuso || 'America/Sao_Paulo' };
+    return { horaResumo: '09:00', fuso: fuso || 'America/Sao_Paulo', visual: 'futurista' };
+  }
+
+  /* Completa o que faltar (dados de versões anteriores) e troca valores inválidos pelo padrão. */
+  function normalizarPreferencias(prefs, fuso) {
+    var padrao = preferenciasPadrao(fuso);
+    var p = Object.assign({}, padrao, prefs && typeof prefs === 'object' ? prefs : {});
+    if (VISUAIS.indexOf(p.visual) === -1) p.visual = padrao.visual;
+    if (!/^\d{2}:\d{2}$/.test(p.horaResumo)) p.horaResumo = padrao.horaResumo;
+    return p;
   }
 
   function estadoVazio(agora, fuso) {
@@ -249,6 +259,7 @@
       var d;
       try { d = JSON.parse(raw2); } catch (e) { throw new Error('Dados v2 corrompidos.'); }
       if (!d || d.versao !== 2 || !Array.isArray(d.contagens)) throw new Error('Dados v2 corrompidos.');
+      d.preferencias = normalizarPreferencias(d.preferencias, fuso);
       return { estado: d, origem: 'v2' };
     }
     var raw1 = armazenamento.getItem(CHAVE_V1);
@@ -269,7 +280,7 @@
   }
 
   return {
-    DAY: DAY, CHAVE_V1: CHAVE_V1, CHAVE_V2: CHAVE_V2, plural: plural,
+    DAY: DAY, CHAVE_V1: CHAVE_V1, CHAVE_V2: CHAVE_V2, VISUAIS: VISUAIS, plural: plural,
     calcular: calcular, dataLocal: dataLocal, ordinal: ordinal,
     adicionarAnos: adicionarAnos, diasAteAniversario: diasAteAniversario, anosCompletos: anosCompletos,
     marcoDoDia: marcoDoDia, proximoMarco: proximoMarco, progressoCiclos: progressoCiclos,
@@ -277,7 +288,7 @@
     sequenciaCheckins: sequenciaCheckins, maiorSequencia: maiorSequencia, registrarCheckin: registrarCheckin,
     desfazerCheckin: desfazerCheckin, cicloManter: cicloManter, ordinalParaMs: ordinalParaMs,
     criarContagem: criarContagem, atualizarContagem: atualizarContagem, registrarDeslize: registrarDeslize, recomecar: recomecar, estatisticasParar: estatisticasParar,
-    preferenciasPadrao: preferenciasPadrao, estadoVazio: estadoVazio, migrarV1: migrarV1,
+    preferenciasPadrao: preferenciasPadrao, normalizarPreferencias: normalizarPreferencias, estadoVazio: estadoVazio, migrarV1: migrarV1,
     carregarOuMigrar: carregarOuMigrar, salvar: salvar
   };
 });
