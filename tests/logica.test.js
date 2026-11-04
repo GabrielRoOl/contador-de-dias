@@ -40,37 +40,117 @@ test.describe('dataLocal e ordinal', () => {
   });
 });
 
-test.describe('marcos', () => {
-  test('múltiplos de 7, 30, 50 e 100', () => {
-    assert.equal(L.marcoDoDia(7), 7);
-    assert.equal(L.marcoDoDia(14), 7);
-    assert.equal(L.marcoDoDia(30), 30);
-    assert.equal(L.marcoDoDia(50), 50);
-    assert.equal(L.marcoDoDia(100), 100);
+test.describe('marcos: semana, mês e ano', () => {
+  const ini = new Date(2026, 0, 10, 8, 30).getTime(); // 2026 -> 2027 -> 2028 (bissexto)
+  const marco = (d, i = ini) => L.marcoDoDia(i, d);
+
+  test('semana a cada 7 dias', () => {
+    assert.deepEqual(marco(7), { tipo: 'semana', n: 1 });
+    assert.deepEqual(marco(14), { tipo: 'semana', n: 2 });
+    assert.deepEqual(marco(28), { tipo: 'semana', n: 4 });
   });
-  test('vale o maior quando o dia cai em mais de um', () => {
-    assert.equal(L.marcoDoDia(210), 30); // 7 e 30
-    assert.equal(L.marcoDoDia(350), 50); // 7 e 50
-    assert.equal(L.marcoDoDia(150), 50); // 30 e 50
-    assert.equal(L.marcoDoDia(300), 100); // 30, 50 e 100
-    assert.equal(L.marcoDoDia(700), 100); // 7 e 100
+  test('mês a cada 30 dias', () => {
+    assert.deepEqual(marco(30), { tipo: 'mes', n: 1 });
+    assert.deepEqual(marco(60), { tipo: 'mes', n: 2 });
+    assert.deepEqual(marco(300), { tipo: 'mes', n: 10 });
+  });
+  test('vale o maior: mês vence semana (dia 210 é múltiplo de 7 e de 30)', () => {
+    assert.deepEqual(marco(210), { tipo: 'mes', n: 7 });
+  });
+  test('50 e 100 não são mais marcos por si', () => {
+    assert.equal(marco(50), null);
+    assert.equal(marco(100), null);
   });
   test('dias comuns, zero e inválidos não são marco', () => {
-    [0, 1, 6, 8, 29, 31, 99, -7, 3.5, NaN].forEach((n) => assert.equal(L.marcoDoDia(n), null, String(n)));
+    [0, 1, 6, 8, 29, 31, 99, -7, 3.5, NaN].forEach((n) => assert.equal(marco(n), null, String(n)));
   });
-  test('recorrente: todo múltiplo de 7 até 1000 é marco', () => {
-    for (let n = 7; n <= 1000; n += 7) assert.ok(L.marcoDoDia(n), String(n));
+  test('ano completa no aniversário do calendário: 365 dias num ano comum', () => {
+    assert.equal(L.diasAteAniversario(ini, 1), 365);
+    assert.deepEqual(marco(365), { tipo: 'ano', n: 1 });
+    assert.equal(marco(366), null);
   });
+  test('ano com 29/02 dentro: 366 dias, e o dia 365 não é o ano', () => {
+    const i = new Date(2027, 5, 1, 9, 0).getTime(); // 01/06/2027 -> 01/06/2028 cruza 29/02/2028
+    assert.equal(L.diasAteAniversario(i, 1), 366);
+    assert.equal(marco(365, i), null);
+    assert.deepEqual(marco(366, i), { tipo: 'ano', n: 1 });
+  });
+  test('2º ano soma os dias reais de cada ano', () => {
+    const i = new Date(2027, 5, 1, 9, 0).getTime(); // 366 + 365
+    assert.equal(L.diasAteAniversario(i, 2), 731);
+    assert.deepEqual(marco(731, i), { tipo: 'ano', n: 2 });
+    assert.equal(marco(730, i), null);
+  });
+  test('ano vence mês e semana quando coincidem', () => {
+    const a = new Date(2026, 0, 1).getTime();
+    const dias = L.diasAteAniversario(a, 1);
+    assert.equal(marco(dias, a).tipo, 'ano');
+  });
+  test('início em 29/02 faz aniversário em 28/02 nos anos sem bissexto', () => {
+    const i = new Date(2024, 1, 29, 10, 0).getTime();
+    assert.equal(L.dataLocal(L.adicionarAnos(i, 1)), '2025-02-28');
+    assert.equal(L.dataLocal(L.adicionarAnos(i, 4)), '2028-02-29');
+    assert.equal(L.diasAteAniversario(i, 1), 365);
+    assert.equal(L.diasAteAniversario(i, 4), 1461);
+    assert.deepEqual(marco(1461, i), { tipo: 'ano', n: 4 });
+  });
+  test('anos completos respeita o instante do aniversário', () => {
+    const i = new Date(2026, 0, 10, 8, 30).getTime();
+    assert.equal(L.anosCompletos(i, new Date(2027, 0, 10, 8, 29).getTime()), 0);
+    assert.equal(L.anosCompletos(i, new Date(2027, 0, 10, 8, 30).getTime()), 1);
+    assert.equal(L.anosCompletos(i, new Date(2030, 5, 1).getTime()), 4);
+  });
+  test('todo aniversário em 10 anos é marco de ano, com os dias reais de cada ano', () => {
+    const i = new Date(2020, 6, 15, 12, 0).getTime();
+    for (let n = 1; n <= 10; n++) {
+      const d = L.diasAteAniversario(i, n);
+      assert.equal(marco(d, i).tipo, 'ano', `ano ${n}`);
+      assert.equal(marco(d, i).n, n);
+    }
+  });
+
   test('próximo marco', () => {
-    assert.deepEqual(L.proximoMarco(0), { dia: 7, intervalo: 7, faltam: 7 });
-    assert.deepEqual(L.proximoMarco(7), { dia: 14, intervalo: 7, faltam: 7 });
-    assert.deepEqual(L.proximoMarco(28), { dia: 30, intervalo: 30, faltam: 2 });
-    assert.deepEqual(L.proximoMarco(98), { dia: 100, intervalo: 100, faltam: 2 });
+    assert.deepEqual(L.proximoMarco(ini, 0), { dia: 7, tipo: 'semana', n: 1, faltam: 7 });
+    assert.deepEqual(L.proximoMarco(ini, 7), { dia: 14, tipo: 'semana', n: 2, faltam: 7 });
+    assert.deepEqual(L.proximoMarco(ini, 28), { dia: 30, tipo: 'mes', n: 1, faltam: 2 });
+    assert.deepEqual(L.proximoMarco(ini, 364), { dia: 365, tipo: 'ano', n: 1, faltam: 1 });
   });
   test('próximo marco com dias fracionados', () => {
-    const r = L.proximoMarco(6.5);
+    const r = L.proximoMarco(ini, 6.5);
     assert.equal(r.dia, 7);
     assert.equal(r.faltam, 0.5);
+  });
+  test('próximo marco nunca está a mais de 7 dias', () => {
+    for (let d = 0; d < 800; d++) assert.ok(L.proximoMarco(ini, d).faltam <= 7, String(d));
+  });
+
+  test('progresso dos ciclos', () => {
+    const agora = ini + (10 * DIA + 12 * 36e5);
+    const p = L.progressoCiclos(ini, agora);
+    assert.equal(p.semana.dia, 3);
+    assert.equal(p.semana.de, 7);
+    assert.ok(Math.abs(p.semana.fracao - 3.5 / 7) < 1e-9);
+    assert.equal(p.mes.dia, 10);
+    assert.ok(Math.abs(p.mes.fracao - 10.5 / 30) < 1e-9);
+    assert.equal(p.ano.anos, 0);
+    assert.equal(p.ano.de, 365);
+    assert.equal(p.ano.dia, 10);
+  });
+  test('progresso do ano usa o tamanho real do ano em curso', () => {
+    const i = new Date(2027, 5, 1, 9, 0).getTime();
+    const p = L.progressoCiclos(i, new Date(2028, 5, 1, 8, 59).getTime());
+    assert.equal(p.ano.anos, 0);
+    assert.equal(p.ano.de, 366);
+    assert.equal(p.ano.dia, 365);
+    assert.ok(p.ano.fracao < 1 && p.ano.fracao > 0.99);
+    const depois = L.progressoCiclos(i, new Date(2028, 5, 1, 9, 0).getTime());
+    assert.equal(depois.ano.anos, 1);
+    assert.equal(depois.ano.dia, 0);
+    assert.equal(depois.ano.de, 365); // 01/06/2028 -> 01/06/2029
+  });
+  test('início hoje: tudo zerado', () => {
+    const p = L.progressoCiclos(ini, ini);
+    assert.deepEqual([p.semana.fracao, p.mes.fracao, p.ano.fracao, p.ano.anos], [0, 0, 0, 0]);
   });
 });
 

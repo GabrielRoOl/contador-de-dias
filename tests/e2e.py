@@ -48,7 +48,7 @@ try:
         check(pg.locator('.live .num').first.inner_text() == '0', 'contagem volta a 0')
         keys = pg.evaluate("Object.keys(localStorage)")
         check(keys == ['contagem-de-dias:v1'], f'chave localStorage inalterada {keys}')
-        check(pg.evaluate("typeof Logica === 'object' && Logica.marcoDoDia(30) === 30"), 'Logica carregada no navegador')
+        check(pg.evaluate("typeof Logica === 'object' && Logica.marcoDoDia(Date.now(), 30).tipo === 'mes'"), 'Logica carregada no navegador')
         check(not errs, f'sem erros de console {errs}')
         check(not failed, f'sem requisicoes falhas {failed}')
         b.close()

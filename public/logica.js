@@ -7,7 +7,6 @@
   var DAY = 864e5;
   var CHAVE_V1 = 'contagem-de-dias:v1';
   var CHAVE_V2 = 'contagem-de-dias:v2';
-  var INTERVALOS_MARCO = [100, 50, 30, 7];
   var TIPOS = ['parar', 'manter'];
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -32,20 +31,62 @@
   }
 
   /* ---------- marcos ---------- */
-  /* Dia N é marco se for múltiplo de 7, 30, 50 ou 100. Vale o maior intervalo. Devolve o intervalo ou null. */
-  function marcoDoDia(dia) {
-    if (!(dia >= 1) || Math.floor(dia) !== dia) return null;
-    for (var i = 0; i < INTERVALOS_MARCO.length; i++) {
-      if (dia % INTERVALOS_MARCO[i] === 0) return INTERVALOS_MARCO[i];
+  /* Semana a cada 7 dias, mês a cada 30 e ano no aniversário do calendário (365 ou 366 dias).
+     Quando um dia cai em mais de um, vale o maior: ano > mês > semana. */
+
+  /* Mesmo dia e hora, n anos depois. 29/02 num ano sem bissexto vira 28/02. */
+  function adicionarAnos(ms, n) {
+    var d = new Date(ms);
+    var ano = d.getFullYear() + n;
+    var ultimo = new Date(ano, d.getMonth() + 1, 0).getDate();
+    return new Date(ano, d.getMonth(), Math.min(d.getDate(), ultimo), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()).getTime();
+  }
+
+  /* Dias de calendário entre o início e o n-ésimo aniversário (365 ou 366). */
+  function diasAteAniversario(inicio, n) {
+    return ordinal(dataLocal(adicionarAnos(inicio, n))) - ordinal(dataLocal(inicio));
+  }
+
+  function anosCompletos(inicio, agora) {
+    var n = 0;
+    while (adicionarAnos(inicio, n + 1) <= agora) n++;
+    return n;
+  }
+
+  /* `dias` é a contagem de dias completos. Devolve { tipo: 'ano'|'mes'|'semana', n } ou null.
+     n é o número do ano, do mês (30 dias) ou da semana (7 dias). */
+  function marcoDoDia(inicio, dias) {
+    if (!(dias >= 1) || Math.floor(dias) !== dias) return null;
+    var estimativa = Math.floor(dias / 365);
+    for (var a = Math.max(1, estimativa - 1); a <= estimativa + 1; a++) {
+      if (diasAteAniversario(inicio, a) === dias) return { tipo: 'ano', n: a };
     }
+    if (dias % 30 === 0) return { tipo: 'mes', n: dias / 30 };
+    if (dias % 7 === 0) return { tipo: 'semana', n: dias / 7 };
     return null;
   }
 
-  function proximoMarco(dias) {
+  /* Próximo dia de marco depois de `dias` (que pode ser fracionado). */
+  function proximoMarco(inicio, dias) {
     for (var n = Math.floor(dias) + 1; ; n++) {
-      var intervalo = marcoDoDia(n);
-      if (intervalo) return { dia: n, intervalo: intervalo, faltam: n - dias };
+      var marco = marcoDoDia(inicio, n);
+      if (marco) return { dia: n, tipo: marco.tipo, n: marco.n, faltam: n - dias };
     }
+  }
+
+  /* Progresso de cada ciclo para as três barras do cartão. `fracao` vai de 0 a 1. */
+  function progressoCiclos(inicio, agora) {
+    var decorrido = calcular(inicio, agora).decorrido;
+    var anos = anosCompletos(inicio, agora);
+    var ini = adicionarAnos(inicio, anos);
+    var fim = adicionarAnos(inicio, anos + 1);
+    var deAno = ordinal(dataLocal(fim)) - ordinal(dataLocal(ini));
+    var fracaoAno = Math.min(1, Math.max(0, (agora - ini) / (fim - ini)));
+    return {
+      semana: { dia: Math.floor(decorrido % 7), de: 7, fracao: (decorrido % 7) / 7 },
+      mes: { dia: Math.floor(decorrido % 30), de: 30, fracao: (decorrido % 30) / 30 },
+      ano: { anos: anos, dia: Math.min(deAno - 1, Math.floor((agora - ini) / DAY)), de: deAno, fracao: fracaoAno }
+    };
   }
 
   /* ---------- economia ---------- */
@@ -190,7 +231,8 @@
   return {
     DAY: DAY, CHAVE_V1: CHAVE_V1, CHAVE_V2: CHAVE_V2, plural: plural,
     calcular: calcular, dataLocal: dataLocal, ordinal: ordinal,
-    marcoDoDia: marcoDoDia, proximoMarco: proximoMarco,
+    adicionarAnos: adicionarAnos, diasAteAniversario: diasAteAniversario, anosCompletos: anosCompletos,
+    marcoDoDia: marcoDoDia, proximoMarco: proximoMarco, progressoCiclos: progressoCiclos,
     economia: economia, formatarReais: formatarReais,
     sequenciaCheckins: sequenciaCheckins, maiorSequencia: maiorSequencia, registrarCheckin: registrarCheckin,
     criarContagem: criarContagem, registrarDeslize: registrarDeslize, recomecar: recomecar, estatisticasParar: estatisticasParar,
