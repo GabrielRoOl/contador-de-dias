@@ -8,7 +8,8 @@ PWA para contar há quantos dias você parou de fazer algo (ou mantém um hábit
 ```
 public/
   index.html            página
-  app.css, app.js       estilo e lógica
+  app.css, app.js       estilo e interface
+  logica.js             lógica pura (dias, marcos, economia, check-in, migração v1→v2)
   fonts/                Big Shoulders Display e Instrument Sans (woff2, latin)
   sw.js                 service worker (offline)
   manifest.webmanifest  instalação como app
@@ -30,7 +31,8 @@ Mude a versão de `CACHE` em `public/sw.js`, senão o celular continua com a ver
 ## Testes
 
 ```bash
-python3 tests/e2e.py
+node --test tests/logica.test.js   # unitários da lógica pura (Node 20+)
+python3 tests/e2e.py               # ponta a ponta no Chromium (Playwright para Python)
 ```
 
-Teste de ponta a ponta no Chromium (Playwright para Python): carga, fontes, criar contagem, persistência, offline e "Recomecei". Os testes unitários das funções puras entram na etapa 2.
+O e2e cobre carga, fontes, criar contagem, persistência, offline e "Recomecei".
