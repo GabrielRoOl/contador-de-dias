@@ -1,0 +1,10 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Termux:Boot: sobe o servidor do Contador de Dias depois que o celular liga.
+# Fica em ~/.termux/boot/30-contador (10-site e 20-aura sobem antes; o contador espera 30 s).
+# Cada linha do log começa com a hora em segundos (epoch): scripts/verificar-boot.sh usa isso para provar que o boot rodou.
+LOG="$HOME/logs/boot-contador.log"
+mkdir -p "$HOME/logs"
+echo "$(date +%s) $(date '+%F %T') boot: aguardando 30 s" >> "$LOG"
+sleep 30
+"$HOME/contador/contador.sh" start >> "$LOG" 2>&1
+echo "$(date +%s) $(date '+%F %T') boot: contador.sh start terminou (codigo $?)" >> "$LOG"
