@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="app.css?v=16">
+<link rel="stylesheet" href="app.css?v=18">
 <script>try{var p=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias,r=document.documentElement;if(p.visual)r.setAttribute('data-visual',p.visual);if(p.modo==='claro')r.setAttribute('data-theme','light');else if(p.modo==='escuro')r.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
@@ -24,7 +24,10 @@
     </button>
   </header>
 
-  <button class="btn primary big" id="toggle-form" type="button" aria-haspopup="dialog">Nova contagem</button>
+  <div class="acoes-topo">
+    <button class="btn primary big" id="toggle-form" type="button" aria-haspopup="dialog">Nova contagem</button>
+    <button class="btn big" id="toggle-pomodoro" type="button">Pomodoro</button>
+  </div>
 
   <section class="list" id="list" aria-label="Suas contagens"></section>
   <p class="foot">Tudo é salvo automaticamente neste aparelho.</p>
@@ -106,8 +109,8 @@
   </div>
 </dialog>
 
-<script src="logica.js?v=16"></script>
-<script src="textos.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="logica.js?v=18"></script>
+<script src="textos.js?v=18"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
