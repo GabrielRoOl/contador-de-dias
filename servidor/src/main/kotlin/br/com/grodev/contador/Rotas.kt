@@ -45,6 +45,7 @@ import org.slf4j.LoggerFactory
 const val PREFIXO = "/contador"
 private const val MAX_CORPO_ESTADO = 256 * 1024
 private const val MAX_CORPO_PUSH = 8 * 1024
+const val LIMITE_CRIACAO_POR_HORA = 5
 
 private val json = Json { ignoreUnknownKeys = true }
 private val log = LoggerFactory.getLogger("rotas")
@@ -60,11 +61,15 @@ private val CabecalhosPadrao = createApplicationPlugin("CabecalhosPadrao") {
     }
 }
 
-/** IP do cliente. Atrás do túnel (conexão vinda de 127.0.0.1) confia no CF-Connecting-IP; fora disso usa o endereço da conexão. */
+/**
+ * Chave de rede do cliente (ver [Rede.chave]). Atrás do túnel (conexão vinda de 127.0.0.1) confia no CF-Connecting-IP,
+ * mas só se ele for mesmo um endereço IP; fora disso usa o endereço da conexão.
+ */
 internal fun ApplicationCall.ipCliente(): String {
     val remoto = request.origin.remoteAddress
     val local = remoto == "127.0.0.1" || remoto == "::1" || remoto == "0:0:0:0:0:0:0:1" || remoto == "localhost"
-    return (if (local) request.header("CF-Connecting-IP")?.trim()?.take(64) else null) ?: remoto
+    val doCabecalho = if (local) request.header("CF-Connecting-IP")?.let(Rede::chave) else null
+    return doCabecalho ?: Rede.chave(remoto) ?: remoto.take(64)
 }
 
 private suspend fun ApplicationCall.erro(status: HttpStatusCode, msg: String, detalhes: List<String> = emptyList()) =
@@ -86,7 +91,7 @@ fun Application.modulo(
     chaves: ChavesVapid?,
     relogio: () -> Long = System::currentTimeMillis,
     limiteGeral: LimitadorTaxa = LimitadorTaxa(240, 60_000, relogio),
-    limiteCriacao: LimitadorTaxa = LimitadorTaxa(10, 3_600_000, relogio),
+    limiteCriacao: LimitadorTaxa = LimitadorTaxa(LIMITE_CRIACAO_POR_HORA, 3_600_000, relogio),
 ) {
     install(CabecalhosPadrao)
     install(ContentNegotiation) { json(Json { encodeDefaults = true }) }
@@ -137,7 +142,7 @@ fun Application.modulo(
                     call.response.header(HttpHeaders.RetryAfter, "3600")
                     return@post call.erro(HttpStatusCode.TooManyRequests, "Muitos dispositivos novos deste endereço. Tente mais tarde.")
                 }
-                if (banco.contarDispositivos() >= config.maxDispositivos) return@post call.erro(HttpStatusCode.ServiceUnavailable, "Servidor cheio.")
+                if (banco.contarDispositivos() >= config.maxDispositivos || banco.bytesTotais() >= config.maxBytes) return@post call.erro(HttpStatusCode.ServiceUnavailable, "Servidor cheio.")
                 val id = Seguranca.novoId()
                 val segredo = Seguranca.novoSegredo()
                 val padrao = Preferencias()
@@ -157,7 +162,11 @@ fun Application.modulo(
                     }
                     val problemas = Validacao.erros(estado, relogio())
                     if (problemas.isNotEmpty()) return@put call.erro(HttpStatusCode.BadRequest, "Estado inválido.", problemas)
-                    banco.salvarEstado(d.id, json.encodeToString(Estado.serializer(), estado.paraServidor()), estado.preferencias.fuso, estado.preferencias.horaResumo, relogio())
+                    val guardar = json.encodeToString(Estado.serializer(), estado.paraServidor())
+                    if (banco.bytesTotais() - d.tamanho + guardar.toByteArray().size > config.maxBytes) {
+                        return@put call.erro(HttpStatusCode.InsufficientStorage, "Servidor sem espaço.")
+                    }
+                    banco.salvarEstado(d.id, guardar, estado.preferencias.fuso, estado.preferencias.horaResumo, relogio())
                     call.respond(HttpStatusCode.NoContent)
                 }
 

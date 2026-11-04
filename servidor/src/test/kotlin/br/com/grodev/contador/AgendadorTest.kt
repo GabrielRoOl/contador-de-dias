@@ -256,4 +256,14 @@ class AgendadorTest {
         assertTrue(chamadas >= 2, "depois do OutOfMemoryError a rodada seguinte ainda aconteceu (chamadas=$chamadas)")
         assertEquals("2026-11-03", banco.obter("d1")!!.ultimoEnvio)
     }
+
+    @Test fun `a limpeza também apaga dispositivos sem inscrição que ninguém usa`() {
+        val dia = Duration.ofDays(1).toMillis()
+        agora = ms(2026, 11, 3, 9, 0)
+        criar("orfao", inscrito = false); criar("ativo")
+        banco.salvarEstado("orfao", "{}", "UTC", "09:00", agora - 20 * dia)
+        banco.salvarEstado("ativo", "{}", "UTC", "09:00", agora - 20 * dia)
+        assertEquals(1, agendador.limparInativos())
+        assertNull(banco.obter("orfao")); assertNotNull(banco.obter("ativo"))
+    }
 }

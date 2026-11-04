@@ -27,6 +27,25 @@ object Seguranca {
     }
 }
 
+/** Normaliza o endereço do cliente para a chave dos limitadores. */
+object Rede {
+    private val IPV4 = Regex("^(25[0-5]|2[0-4]\\d|1?\\d?\\d)(\\.(25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}$")
+    private val CARACTERES_IPV6 = Regex("^[0-9A-Fa-f:.]{2,45}$")
+
+    /**
+     * IPv4 fica como está; IPv6 vira o bloco /64 (quem recebe um IPv6 recebe o /64 inteiro, então trocar o final do
+     * endereço não pode valer como "outro cliente"); IPv4 embutido em IPv6 volta a ser IPv4. Devolve null se não for um IP.
+     */
+    fun chave(ip: String): String? {
+        val t = ip.trim()
+        if (IPV4.matches(t)) return t
+        if (':' !in t || !CARACTERES_IPV6.matches(t)) return null
+        val bytes = try { java.net.InetAddress.getByName(t).address } catch (_: Exception) { return null } // literal: não consulta DNS
+        if (bytes.size == 4) return bytes.joinToString(".") { (it.toInt() and 0xff).toString() }
+        return "v6:" + (0 until 4).joinToString(":") { i -> "%02x%02x".format(bytes[2 * i].toInt() and 0xff, bytes[2 * i + 1].toInt() and 0xff) }
+    }
+}
+
 /** Limitador simples por janela fixa (em memória). Suficiente para um servidor pequeno atrás do túnel. */
 class LimitadorTaxa(private val maximo: Int, private val janelaMs: Long, private val relogio: () -> Long = System::currentTimeMillis) {
     private class Janela(var inicio: Long, var contagem: Int)

@@ -158,4 +158,42 @@ class BancoTest {
         val bytes = dir.listFiles { f -> f.name.startsWith("antigo.db") }!!.map { it.readBytes() }.fold(ByteArray(0)) { a, b -> a + b }
         assertEquals(0, ocorrencias(bytes, "MARCADOR_ANTIGO_321"))
     }
+
+    @Test fun `a cota soma os bytes dos estados e acompanha as mudanças`() {
+        assertEquals(0, banco.bytesTotais())
+        novo("d1"); novo("d2") // "{}" = 2 bytes cada
+        assertEquals(4, banco.bytesTotais())
+        banco.salvarEstado("d1", "ação".repeat(10), "UTC", "09:00", 2) // acentos: conta bytes, não caracteres
+        assertEquals(10 * 6 + 2, banco.bytesTotais())
+        assertEquals(60L, banco.obter("d1")!!.tamanho)
+        banco.apagar("d1")
+        assertEquals(2, banco.bytesTotais())
+    }
+
+    @Test fun `limpa sem inscrição o que nunca foi usado e o que está parado`() {
+        val dia = 86_400_000L
+        val agora = 100 * dia
+        novo("nunca-usado-velho", agora - 2 * dia)      // criado e nunca tocou em nada
+        novo("nunca-usado-novo", agora - dia / 2)       // ainda dentro do prazo (alguém pode estar ativando)
+        novo("parado", agora - 50 * dia); banco.salvarEstado("parado", "{}", "UTC", "09:00", agora - 20 * dia)
+        novo("ativo-recente", agora - 50 * dia); banco.salvarEstado("ativo-recente", "{}", "UTC", "09:00", agora - 2 * dia)
+        novo("com-inscricao", agora - 50 * dia); banco.salvarEstado("com-inscricao", "{}", "UTC", "09:00", agora - 30 * dia)
+        banco.salvarInscricao("com-inscricao", "https://fcm.googleapis.com/z", "p", "a", agora - 30 * dia)
+        banco.salvarEstado("com-inscricao", "{}", "UTC", "09:00", agora - 30 * dia)
+        assertEquals(2, banco.limparSemInscricao(agora - dia, agora - 14 * dia))
+        listOf("nunca-usado-velho", "parado").forEach { assertNull(banco.obter(it), it) }
+        listOf("nunca-usado-novo", "ativo-recente", "com-inscricao").forEach { assertNotNull(banco.obter(it), it) }
+    }
+
+    @Test fun `bancos anteriores à cota recebem o tamanho dos estados que já tinham`() {
+        val arquivo = File(dir, "v1.db").path
+        java.sql.DriverManager.getConnection("jdbc:sqlite:$arquivo").use { c ->
+            c.createStatement().use {
+                it.execute("CREATE TABLE dispositivos (id TEXT PRIMARY KEY, segredo_hash BLOB NOT NULL, criado_em INTEGER NOT NULL, atualizado_em INTEGER NOT NULL, fuso TEXT NOT NULL, hora_resumo TEXT NOT NULL, estado_json TEXT NOT NULL, push_endpoint TEXT, push_p256dh TEXT, push_auth TEXT, ultimo_envio TEXT, tentativa_data TEXT, tentativas INTEGER NOT NULL DEFAULT 0, proxima_tentativa INTEGER NOT NULL DEFAULT 0)")
+                it.execute("PRAGMA user_version = 1")
+                it.execute("INSERT INTO dispositivos (id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, estado_json) VALUES ('x', x'00', 1, 1, 'UTC', '09:00', '12345')")
+            }
+        }
+        assertEquals(5, Banco(arquivo).bytesTotais())
+    }
 }

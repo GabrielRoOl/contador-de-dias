@@ -12,6 +12,8 @@ data class Config(
     val vapidPrivada: String? = null,
     val assuntoVapid: String = "https://grodev.com.br/contador",
     val maxDispositivos: Int = 10_000,
+    /** Soma dos estados guardados; passou disso, novos dispositivos e estados maiores são recusados. */
+    val maxBytes: Long = 200L * 1024 * 1024,
 ) {
     companion object {
         /** Lê KEY=VALOR, ignora linhas vazias e comentários. As variáveis de ambiente de verdade têm prioridade. */
@@ -40,6 +42,7 @@ data class Config(
                 vapidPrivada = e["VAPID_PRIVATE"]?.takeIf { it.isNotBlank() },
                 assuntoVapid = e["VAPID_SUBJECT"]?.takeIf { it.isNotBlank() } ?: "https://grodev.com.br/contador",
                 maxDispositivos = inteiro("MAX_DISPOSITIVOS", 10_000),
+                maxBytes = inteiro("MAX_BYTES_MB", 200) * 1024L * 1024L,
             )
         }
     }

@@ -19,6 +19,7 @@ class Dispositivo(
     val tentativaData: String?,
     val tentativas: Int,
     val proximaTentativa: Long,
+    val tamanho: Long = 0,
 ) {
     val temInscricao get() = pushEndpoint != null && pushP256dh != null && pushAuth != null
 }
@@ -74,6 +75,13 @@ class Banco(private val caminho: String) {
             // Bancos criados antes do secure_delete podem ter restos de dados apagados: o VACUUM reescreve o arquivo sem eles.
             c.createStatement().use { it.execute("VACUUM"); it.execute("PRAGMA user_version = 2") }
         }
+        if (versao < 3) {
+            c.createStatement().use {
+                it.execute("ALTER TABLE dispositivos ADD COLUMN tamanho INTEGER NOT NULL DEFAULT 0") // bytes do estado: a cota total soma isto sem ler os estados
+                it.execute("UPDATE dispositivos SET tamanho = length(CAST(estado_json AS BLOB))")
+                it.execute("PRAGMA user_version = 3")
+            }
+        }
     }
 
     /** Esvazia o WAL, onde ainda ficam as versões antigas das páginas, depois de apagar dados pessoais. */
@@ -84,19 +92,24 @@ class Banco(private val caminho: String) {
         fuso = getString("fuso"), horaResumo = getString("hora_resumo"), estadoJson = getString("estado_json"),
         pushEndpoint = getString("push_endpoint"), pushP256dh = getString("push_p256dh"), pushAuth = getString("push_auth"),
         ultimoEnvio = getString("ultimo_envio"), tentativaData = getString("tentativa_data"), tentativas = getInt("tentativas"),
-        proximaTentativa = getLong("proxima_tentativa"),
+        proximaTentativa = getLong("proxima_tentativa"), tamanho = getLong("tamanho"),
     )
 
     fun contarDispositivos(): Int = usar { c ->
         c.createStatement().use { s -> s.executeQuery("SELECT COUNT(*) FROM dispositivos").use { it.getInt(1) } }
     }
 
+    /** Soma dos bytes dos estados guardados (para a cota do servidor). */
+    fun bytesTotais(): Long = usar { c ->
+        c.createStatement().use { s -> s.executeQuery("SELECT COALESCE(SUM(tamanho), 0) FROM dispositivos").use { it.getLong(1) } }
+    }
+
     fun criarDispositivo(id: String, segredoHash: ByteArray, agora: Long, estadoJson: String, fuso: String, horaResumo: String) = usar { c ->
         c.prepareStatement(
-            "INSERT INTO dispositivos (id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, estado_json) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO dispositivos (id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, estado_json, tamanho) VALUES (?,?,?,?,?,?,?,?)",
         ).use {
             it.setString(1, id); it.setBytes(2, segredoHash); it.setLong(3, agora); it.setLong(4, agora)
-            it.setString(5, fuso); it.setString(6, horaResumo); it.setString(7, estadoJson)
+            it.setString(5, fuso); it.setString(6, horaResumo); it.setString(7, estadoJson); it.setLong(8, estadoJson.toByteArray().size.toLong())
             it.executeUpdate()
         }
     }
@@ -109,8 +122,8 @@ class Banco(private val caminho: String) {
     }
 
     fun salvarEstado(id: String, estadoJson: String, fuso: String, horaResumo: String, agora: Long): Boolean = usar { c ->
-        c.prepareStatement("UPDATE dispositivos SET estado_json = ?, fuso = ?, hora_resumo = ?, atualizado_em = ? WHERE id = ?").use {
-            it.setString(1, estadoJson); it.setString(2, fuso); it.setString(3, horaResumo); it.setLong(4, agora); it.setString(5, id)
+        c.prepareStatement("UPDATE dispositivos SET estado_json = ?, fuso = ?, hora_resumo = ?, atualizado_em = ?, tamanho = ? WHERE id = ?").use {
+            it.setString(1, estadoJson); it.setString(2, fuso); it.setString(3, horaResumo); it.setLong(4, agora); it.setLong(5, estadoJson.toByteArray().size.toLong()); it.setString(6, id)
             it.executeUpdate() == 1
         }
     }
@@ -154,7 +167,7 @@ class Banco(private val caminho: String) {
         c.createStatement().use { s ->
             s.executeQuery(
                 "SELECT id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, '' AS estado_json, push_endpoint, push_p256dh, push_auth, " +
-                    "ultimo_envio, tentativa_data, tentativas, proxima_tentativa FROM dispositivos WHERE push_endpoint IS NOT NULL",
+                    "ultimo_envio, tentativa_data, tentativas, proxima_tentativa, tamanho FROM dispositivos WHERE push_endpoint IS NOT NULL",
             ).use { rs -> buildList { while (rs.next()) add(rs.dispositivo()) } }
         }
     }
@@ -185,5 +198,16 @@ class Banco(private val caminho: String) {
     fun limparInativos(limiteAtualizacao: Long): Int = usar { c ->
         c.prepareStatement("DELETE FROM dispositivos WHERE atualizado_em < ?").use { it.setLong(1, limiteAtualizacao); it.executeUpdate() }
             .also { c.limparWal() }
+    }
+
+    /**
+     * Apaga o que não serve para nada no servidor: dispositivos que nunca chegaram a ter estado ou inscrição depois de
+     * `nuncaUsadoAntes`, e os sem inscrição de push que não sincronizam desde `paradoAntes`. Sem inscrição o servidor não
+     * tem como avisar, e quem só ocupa espaço não deve poder encher o cadastro.
+     */
+    fun limparSemInscricao(nuncaUsadoAntes: Long, paradoAntes: Long): Int = usar { c ->
+        c.prepareStatement(
+            "DELETE FROM dispositivos WHERE push_endpoint IS NULL AND ((atualizado_em = criado_em AND criado_em < ?) OR atualizado_em < ?)",
+        ).use { it.setLong(1, nuncaUsadoAntes); it.setLong(2, paradoAntes); it.executeUpdate() }.also { c.limparWal() }
     }
 }

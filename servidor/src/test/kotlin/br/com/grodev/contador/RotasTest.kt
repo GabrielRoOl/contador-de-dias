@@ -333,4 +333,40 @@ class RotasTest {
         assertEquals(HttpStatusCode.OK, c.get("/contador/api/saude").status)
         assertEquals(HttpStatusCode.NotFound, c.get("/contador/").status)
     }
+
+    // ---------------------------------------------------------------- limites e cota
+
+    @Test fun `por padrão só 5 dispositivos novos por hora do mesmo endereço`() = testApplication {
+        application { modulo(config(), banco, chaves, { agora }) }
+        val c = createClient { followRedirects = false }
+        repeat(5) { assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "200.9.9.9") }.status) }
+        assertEquals(HttpStatusCode.TooManyRequests, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "200.9.9.9") }.status)
+        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "200.9.9.10") }.status, "outro endereço não é afetado")
+    }
+
+    @Test fun `trocar o fim do IPv6 não vale como outro cliente`() = comApp(criacao = LimitadorTaxa(2, 3_600_000) { agora }) { c ->
+        suspend fun cria(ip: String) = c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", ip) }.status
+        assertEquals(HttpStatusCode.Created, cria("2804:14d:1:2::1"))
+        assertEquals(HttpStatusCode.Created, cria("2804:14d:1:2:abcd:1234:5678:9abc"))
+        assertEquals(HttpStatusCode.TooManyRequests, cria("2804:14d:1:2:ffff::7"))
+        assertEquals(HttpStatusCode.Created, cria("2804:14d:1:3::1"), "outro /64")
+    }
+
+    @Test fun `CF-Connecting-IP que não é um IP é ignorado, não vira chave do limitador`() = comApp(criacao = LimitadorTaxa(1, 3_600_000) { agora }) { c ->
+        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "lixo-1") }.status)
+        assertEquals(HttpStatusCode.TooManyRequests, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "lixo-2") }.status)
+        assertEquals(HttpStatusCode.TooManyRequests, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "x".repeat(60)) }.status)
+    }
+
+    @Test fun `a cota de bytes recusa estado que a estoura e novos dispositivos`() = comApp(Config(pastaEstatica = pasta, maxBytes = 3_000, caminhoBanco = File(dir, "t.db").path)) { c ->
+        val (id, segredo) = c.novo()
+        assertEquals(HttpStatusCode.NoContent, c.putJson("/contador/api/dispositivos/$id/estado", estadoOk, segredo).status)
+        val grande = estadoOk.replace("\"contagens\":[", "\"contagens\":[" + (1..40).joinToString(",") { """{"id":"c$it","nome":"Refrigerante numero $it","tipo":"parar","inicio":1761000000000}""" } + ",")
+        assertEquals(HttpStatusCode.InsufficientStorage, c.putJson("/contador/api/dispositivos/$id/estado", grande, segredo).status)
+        val (id2, seg2) = c.novo()
+        assertEquals(HttpStatusCode.NoContent, c.putJson("/contador/api/dispositivos/$id2/estado", estadoOk, seg2).status)
+        assertEquals(HttpStatusCode.NoContent, c.putJson("/contador/api/dispositivos/$id/estado", estadoOk, segredo).status, "reenviar o mesmo tamanho cabe")
+        while (banco.bytesTotais() < 3_000) banco.salvarEstado(id2, "x".repeat(3_000), "UTC", "09:00", agora)
+        assertEquals(HttpStatusCode.ServiceUnavailable, c.post("/contador/api/dispositivos").status)
+    }
 }

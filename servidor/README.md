@@ -29,9 +29,11 @@ As três últimas exigem `Authorization: Bearer <segredo>`. Id desconhecido e se
 ## Segurança
 
 - Endpoint de push só em HTTPS e só de serviços conhecidos (FCM, Mozilla, Apple, Windows): evita que o servidor seja induzido a chamar URLs internas (SSRF). Redirecionamentos não são seguidos.
-- Corpo limitado (512 KB), validação de tudo que chega, SQL parametrizado, limite por IP (o IP real vem do `CF-Connecting-IP`, só aceito quando a conexão vem de 127.0.0.1).
+- Corpo limitado (256 KB), validação de tudo que chega, SQL parametrizado. Limite por IP: 240 req/min na API e 5 dispositivos novos por hora; IPv6 conta por bloco /64. O IP real vem do `CF-Connecting-IP`, só aceito quando a conexão vem de 127.0.0.1 e só se for mesmo um IP.
+- Cota: `MAX_DISPOSITIVOS` (10 000) e `MAX_BYTES_MB` (200, soma dos estados guardados). Dispositivos que nunca foram usados (1 dia) ou ficam sem inscrição de push e parados (14 dias) são apagados.
+- O servidor guarda só o que o aviso usa: notas, deslizes e o detalhe do histórico não são guardados.
 - Arquivos do app com `Cache-Control: no-cache` e cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`.
-- Dispositivos sem sincronizar há 365 dias são apagados (LGPD). Logs não trazem segredos nem endpoints.
+- Dispositivos sem sincronizar há 365 dias são apagados (LGPD). Apagar é de verdade: `secure_delete` e checkpoint do WAL (o texto não fica no arquivo do banco). Logs não trazem segredos nem endpoints.
 
 ## Agendador
 

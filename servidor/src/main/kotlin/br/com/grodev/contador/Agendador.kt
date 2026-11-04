@@ -41,6 +41,8 @@ class Agendador(
     private val intervaloTentativa: Duration = Duration.ofMinutes(5),
     private val ttlSegundos: Int = 3 * 3600,
     private val inatividadeMax: Duration = Duration.ofDays(365),
+    private val nuncaUsadoMax: Duration = Duration.ofDays(1),
+    private val semInscricaoMax: Duration = Duration.ofDays(14),
     private val paralelismo: Int = 8,
     private val despachante: CoroutineDispatcher = Dispatchers.IO,
     private val intervaloRodada: Long = 60_000,
@@ -120,7 +122,9 @@ class Agendador(
 
     /** Apaga quem não sincroniza há muito tempo (LGPD). */
     fun limparInativos(): Int {
-        val apagados = banco.limparInativos(relogio() - inatividadeMax.toMillis())
+        val agora = relogio()
+        val apagados = banco.limparInativos(agora - inatividadeMax.toMillis()) +
+            banco.limparSemInscricao(agora - nuncaUsadoMax.toMillis(), agora - semInscricaoMax.toMillis())
         if (apagados > 0) log.info("{} dispositivos inativos apagados", apagados)
         return apagados
     }
