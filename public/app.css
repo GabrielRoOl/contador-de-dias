@@ -285,3 +285,29 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(6px);
 .codigo { font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; font-size: 20px; font-weight: 700; letter-spacing: 0.08em; margin: 0; padding: 12px; border: 1px dashed var(--accent); border-radius: 10px; text-align: center; user-select: all; overflow-wrap: anywhere; }
 #a-convites-lista li { flex-direction: row; justify-content: space-between; align-items: center; gap: 8px; }
 #a-convites-lista .info { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+
+/* telas: contagens e Pomodoro (uma de cada vez) */
+.tela { display: flex; flex-direction: column; gap: 16px; }
+.tela[hidden] { display: none; }
+
+/* Pomodoro */
+.field select {
+  min-height: 46px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line); width: 100%; min-width: 0; font-size: 16px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent); color: var(--ink);
+}
+.field select:focus { border-color: var(--accent); box-shadow: var(--glow); outline: none; }
+.pomo { gap: 16px; }
+.pomo-fase { margin: 0; text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 20px; text-transform: uppercase; letter-spacing: 0.24em; color: var(--muted); }
+.pomo-tempo { font-family: var(--font-display); font-weight: 800; font-size: 76px; line-height: 0.9; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: var(--accent); text-shadow: var(--num-glow); }
+.pomo-ciclo { list-style: none; margin: 0; padding: 0; display: flex; justify-content: center; gap: 12px; }
+.pomo-ciclo li { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); }
+.pomo-ciclo li.feito { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.pomo-ciclo li.atual { border-color: var(--accent); }
+.pomo-msg { margin: 0; min-height: 1.4em; text-align: center; font-size: 15px; color: var(--muted); }
+.pomo-botoes { display: flex; flex-direction: column; gap: 10px; }
+.pomo-botoes .btn:disabled { opacity: 0.45; }
+.pomo-hoje { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pomo-hoje p { margin: 0; font-size: 15px; }
+.pomo-dias { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.pomo-dias li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; font-variant-numeric: tabular-nums; }
+[data-visual="classico"] .pomo-ciclo li.feito { box-shadow: none; }

@@ -1,6 +1,7 @@
 (function () {
   var L = window.Logica;
   var T = window.Textos;
+  var PM = window.Pomodoro;
   var DAY = L.DAY;
 
   var estado = L.estadoVazio(Date.now());
@@ -473,7 +474,7 @@
     dialogo.showModal();
   });
   dialogo.addEventListener('close', function () { document.getElementById('a-convite-campo').value = ''; esconderCodigo(); document.getElementById('a-convites-erro').textContent = ''; });
-  [dialogoNova, dialogo].forEach(function (d) {
+  [dialogoNova, dialogo, document.getElementById('pomo-historico')].forEach(function (d) {
     d.addEventListener('click', function (e) {
       if (e.target === d || e.target.closest('[data-fechar-dialogo]')) d.close();
     });
@@ -601,14 +602,201 @@
     render();
   });
 
+  /* ---------- Pomodoro ---------- */
+  var pomo = PM.novo();
+  var pomoUi = { msg: '', armado: false };
+  var pomoFim = null;      // setTimeout que acorda no fim da fase, mesmo fora da tela do Pomodoro
+  var audioCtx = null;
+  var tituloOriginal = document.title;
+  var NOME_FASE = { foco: 'Foco', pausa: 'Pausa', longa: 'Pausa longa' };
+
+  function pomoSalvar() { PM.salvar(localStorage, pomo); }
+
+  /* Silêncio total é falha comum em PWA: o navegador só libera áudio depois de um toque, então prepara aqui. */
+  function prepararAudio() {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audioCtx = audioCtx || new AC();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { audioCtx = null; }
+  }
+  /* Depois de recarregar ou reabrir o app com o foco rodando, o som só volta a funcionar após o próximo toque em qualquer lugar. */
+  document.addEventListener('pointerdown', function () { if (pomo.rodando && !audioCtx) prepararAudio(); }, { passive: true });
+  function bipe() {
+    if (!audioCtx) return;
+    try {
+      [0, 0.28, 0.56].forEach(function (t) {
+        var ini = audioCtx.currentTime + t, o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, ini);
+        g.gain.exponentialRampToValueAtTime(0.25, ini + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ini + 0.2);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(ini); o.stop(ini + 0.22);
+      });
+    } catch (e) { /* sem som, o resto do aviso continua */ }
+  }
+  function alertarFim(texto) {
+    bipe();
+    if (navigator.vibrate) { try { navigator.vibrate([200, 100, 200, 100, 200]); } catch (e) { /* sem vibração */ } }
+    if (document.hidden) document.title = texto + ' · ' + tituloOriginal;
+  }
+
+  function textoConclusao(c, vinculada) {
+    if (c.fase !== 'foco') return 'A pausa acabou. Pronto para o próximo foco?';
+    var base = c.proxima === 'longa' ? 'Foco concluído. Quatro focos! Pausa longa de 15 min.' : 'Foco concluído. Hora da pausa de 5 min.';
+    return vinculada ? base + ' "' + vinculada + '" marcada.' : base;
+  }
+
+  /* Fecha a fase que acabou (se acabou), marca o check-in da contagem vinculada e avisa se aconteceu agora. */
+  function pomoVerificar() {
+    var agora = Date.now();
+    var r = PM.avancar(pomo, agora);
+    if (!r.concluiu) { pomoAgendar(); return; }
+    pomo = r.estado;
+    var c = r.concluiu, vinculada = '';
+    if (c.contou && c.contagemId) {
+      var alvo = achar(c.contagemId);
+      if (alvo && alvo.tipo === 'manter' && !somenteLeitura) {
+        substituir(L.registrarCheckin(alvo, c.dia));
+        persist();
+        render();
+        vinculada = alvo.nome;
+      }
+    }
+    pomoSalvar();
+    pomoUi.msg = textoConclusao(c, vinculada);
+    pomoUi.armado = false;
+    if (agora - c.em < 8000) alertarFim(c.fase === 'foco' ? 'Foco concluído' : 'Pausa concluída');
+    pomoAgendar();
+    pomoRender();
+  }
+  function pomoAgendar() {
+    if (pomoFim) { clearTimeout(pomoFim); pomoFim = null; }
+    if (pomo.rodando) pomoFim = setTimeout(pomoVerificar, Math.max(0, pomo.fimEm - Date.now()) + 30);
+  }
+
+  var elPomo = {
+    fase: document.getElementById('pomo-fase'), tempo: document.getElementById('pomo-tempo'), arco: document.getElementById('pomo-arco'),
+    ciclo: document.getElementById('pomo-ciclo'), msg: document.getElementById('pomo-msg'), principal: document.getElementById('pomo-principal'),
+    pular: document.getElementById('pomo-pular'), parar: document.getElementById('pomo-parar'), vinculo: document.getElementById('pomo-vinculo'),
+    hoje: document.getElementById('pomo-hoje')
+  };
+  var telaPomo = document.getElementById('tela-pomodoro');
+  var telaContagens = document.getElementById('tela-contagens');
+  var dialogoHistorico = document.getElementById('pomo-historico');
+
+  /* Só o relógio e o anel: roda a cada segundo sem mexer no resto da tela. */
+  function pomoRelogio() {
+    var rest = PM.restante(pomo, Date.now());
+    var dur = PM.DURACAO[pomo.fase];
+    var txt = PM.formatarTempo(rest);
+    if (elPomo.tempo.textContent !== txt) elPomo.tempo.textContent = txt;
+    elPomo.arco.setAttribute('stroke-dasharray', (Math.round((1 - rest / dur) * 1000) / 10) + ' 100');
+  }
+
+  function pomoOpcoesVinculo() {
+    var manter = estado.contagens.filter(function (c) { return c.tipo === 'manter'; });
+    if (pomo.contagemId && !manter.some(function (c) { return c.id === pomo.contagemId; })) { pomo = PM.vincular(pomo, null); pomoSalvar(); }
+    elPomo.vinculo.innerHTML = '<option value="">Nenhuma</option>' + manter.map(function (c) {
+      return '<option value="' + esc(c.id) + '">' + esc(c.nome) + '</option>';
+    }).join('');
+    elPomo.vinculo.value = pomo.contagemId || '';
+  }
+
+  function pomoRender() {
+    if (telaPomo.hidden) return;
+    var st = PM.status(pomo);
+    var feitos = pomo.fase === 'foco' ? pomo.ciclo - 1 : pomo.fase === 'pausa' ? pomo.ciclo : PM.CICLOS;
+    elPomo.arco.setAttribute('class', 'arco ' + (pomo.fase === 'foco' ? 'r-ano' : pomo.fase === 'pausa' ? 'r-semana' : 'r-mes'));
+    elPomo.fase.textContent = pomo.fase === 'foco' ? 'Foco ' + pomo.ciclo + ' de ' + PM.CICLOS : NOME_FASE[pomo.fase];
+    Array.prototype.forEach.call(elPomo.ciclo.children, function (li, i) {
+      li.className = i < feitos ? 'feito' : (i === feitos && pomo.fase === 'foco' ? 'atual' : '');
+    });
+    elPomo.principal.textContent = st === 'rodando' ? 'Pausar' : st === 'pausado' ? 'Continuar'
+      : pomo.fase === 'foco' ? 'Iniciar foco' : pomo.fase === 'pausa' ? 'Iniciar pausa' : 'Iniciar pausa longa';
+    var nada = st === 'pronto' && pomo.fase === 'foco' && pomo.ciclo === 1;
+    elPomo.pular.disabled = nada;
+    elPomo.parar.disabled = nada;
+    elPomo.parar.textContent = pomoUi.armado ? 'Confirmar parar' : 'Parar';
+    elPomo.msg.textContent = pomoUi.armado ? 'Parar cancela esta sessão e ela não conta.' : (pomoUi.msg || (st === 'pausado' ? 'Pausado. Continue quando quiser.' : ''));
+    var n = PM.pomodorosDoDia(pomo, PM.dataLocal(Date.now()));
+    elPomo.hoje.textContent = n === 0 ? 'Nenhum pomodoro hoje ainda.' : 'Hoje: ' + n + ' ' + plural(n, 'pomodoro', 'pomodoros') + '.';
+    pomoOpcoesVinculo();
+    pomoRelogio();
+  }
+
+  var armadoTimer = null;
+  function desarmarParar() { pomoUi.armado = false; if (armadoTimer) { clearTimeout(armadoTimer); armadoTimer = null; } }
+
+  elPomo.principal.addEventListener('click', function () {
+    prepararAudio();
+    pomoUi.msg = ''; desarmarParar();
+    var agora = Date.now();
+    pomo = PM.status(pomo) === 'rodando' ? PM.pausar(pomo, agora) : PM.iniciar(pomo, agora);
+    pomoSalvar(); pomoAgendar(); pomoRender();
+  });
+  elPomo.pular.addEventListener('click', function () {
+    pomoUi.msg = ''; desarmarParar();
+    pomo = PM.pular(pomo);
+    pomoSalvar(); pomoAgendar(); pomoRender();
+  });
+  elPomo.parar.addEventListener('click', function () {
+    // com a sessão em andamento (ou pausada) pede um segundo toque; esperando começar, para direto
+    if (PM.status(pomo) !== 'pronto' && !pomoUi.armado) {
+      pomoUi.armado = true;
+      armadoTimer = setTimeout(function () { armadoTimer = null; pomoUi.armado = false; pomoRender(); }, 4000);
+      pomoRender();
+      return;
+    }
+    desarmarParar();
+    pomoUi.msg = '';
+    pomo = PM.parar(pomo);
+    pomoSalvar(); pomoAgendar(); pomoRender();
+  });
+  elPomo.vinculo.addEventListener('change', function () {
+    pomo = PM.vincular(pomo, elPomo.vinculo.value);
+    pomoSalvar();
+  });
+
+  var fmtDiaHist = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  document.getElementById('pomo-historico-abrir').addEventListener('click', function () {
+    var h = PM.historico(pomo);
+    document.getElementById('pomo-historico-total').textContent = h.length === 0
+      ? 'Nenhum pomodoro registrado ainda. Cada foco de 25 minutos concluído aparece aqui.'
+      : 'Total: ' + PM.total(pomo) + ' ' + plural(PM.total(pomo), 'pomodoro', 'pomodoros') + ' nos últimos ' + PM.MAX_DIAS + ' dias.';
+    document.getElementById('pomo-historico-lista').innerHTML = h.map(function (d) {
+      var p = d.dia.split('-');
+      return '<li><span>' + esc(fmtDiaHist.format(new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])))) + '</span><span>' + d.n + '</span></li>';
+    }).join('');
+    dialogoHistorico.showModal();
+  });
+
+  /* Uma tela de cada vez, pelo endereço (#pomodoro): o botão Voltar do celular volta para as contagens. */
+  function aplicarTela() {
+    var noPomo = location.hash === '#pomodoro';
+    telaContagens.hidden = noPomo;
+    telaPomo.hidden = !noPomo;
+    if (noPomo) { pomoVerificar(); pomoRender(); }
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', aplicarTela);
+  document.getElementById('toggle-pomodoro').addEventListener('click', function () { location.hash = '#pomodoro'; });
+  document.getElementById('pomo-voltar').addEventListener('click', function () { location.hash = ''; });
+  setInterval(function () { if (!telaPomo.hidden) { pomoVerificar(); pomoRelogio(); } }, 1000);
+
   /* ---------- início ---------- */
   carregar();
+  pomo = PM.carregar(localStorage);
+  aplicarTela();
+  pomoVerificar();
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', sincronizarCorBarra);
   render();
   setInterval(tick, 15000);
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) sync.descarregar();
-    else { tick(); sync.retomar(estado); }
+    else { tick(); sync.retomar(estado); document.title = tituloOriginal; pomoVerificar(); }
   });
   window.addEventListener('online', function () { sync.retomar(estado); });
   sync.retomar(estado);

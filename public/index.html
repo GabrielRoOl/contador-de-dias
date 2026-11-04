@@ -9,11 +9,12 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="app.css?v=21">
+<link rel="stylesheet" href="app.css?v=24">
 <script>try{var p=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias,r=document.documentElement;if(p.visual)r.setAttribute('data-visual',p.visual);if(p.modo==='claro')r.setAttribute('data-theme','light');else if(p.modo==='escuro')r.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
 <main class="wrap">
+  <div class="tela" id="tela-contagens">
   <header class="top">
     <div>
       <h1>Contagem de Dias</h1>
@@ -31,6 +32,52 @@
 
   <section class="list" id="list" aria-label="Suas contagens"></section>
   <p class="foot">Tudo é salvo automaticamente neste aparelho.</p>
+  </div>
+
+  <section class="tela" id="tela-pomodoro" aria-labelledby="pomo-titulo" hidden>
+    <header class="top">
+      <div>
+        <h1 id="pomo-titulo">Pomodoro</h1>
+        <p>Foco e pausa, um ciclo de cada vez.</p>
+      </div>
+      <button class="icone-btn" id="pomo-voltar" type="button" aria-label="Voltar às contagens">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+      </button>
+    </header>
+
+    <div class="card pomo">
+      <p class="pomo-fase" id="pomo-fase"></p>
+      <div class="aneis">
+        <svg viewBox="0 0 280 280" aria-hidden="true">
+          <circle class="marcas" cx="140" cy="140" r="133" pathLength="100"/>
+          <circle class="trilho" cx="140" cy="140" r="110"/>
+          <circle class="arco r-ano" id="pomo-arco" cx="140" cy="140" r="110" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 140 140)"/>
+        </svg>
+        <div class="centro"><span class="pomo-tempo" id="pomo-tempo" role="timer">25:00</span></div>
+      </div>
+      <ol class="pomo-ciclo" id="pomo-ciclo" aria-label="Focos deste bloco"><li></li><li></li><li></li><li></li></ol>
+      <p class="pomo-msg" id="pomo-msg" role="status" aria-live="polite"></p>
+      <div class="pomo-botoes">
+        <button class="btn primary big" id="pomo-principal" type="button">Iniciar foco</button>
+        <div class="row2">
+          <button class="btn" id="pomo-pular" type="button">Pular</button>
+          <button class="btn" id="pomo-parar" type="button">Parar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <label for="pomo-vinculo">Contar para</label>
+        <select id="pomo-vinculo"></select>
+        <p class="hint">Cada foco concluído marca o dia dessa contagem, se for de um hábito que você mantém.</p>
+      </div>
+      <div class="pomo-hoje">
+        <p id="pomo-hoje"></p>
+        <button class="btn small" id="pomo-historico-abrir" type="button" aria-haspopup="dialog">Histórico</button>
+      </div>
+    </div>
+  </section>
 </main>
 
 <dialog id="nova" aria-labelledby="nova-titulo">
@@ -137,9 +184,24 @@
   </div>
 </dialog>
 
-<script src="logica.js?v=21"></script>
-<script src="textos.js?v=21"></script>
-<script src="sincronia.js?v=21"></script>
-<script src="app.js?v=21"></script>
+<dialog id="pomo-historico" aria-labelledby="pomo-historico-titulo">
+  <div class="dialogo">
+    <div class="dialogo-topo">
+      <h2 id="pomo-historico-titulo">Histórico</h2>
+      <button class="icone-btn" type="button" data-fechar-dialogo aria-label="Fechar histórico">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p class="hint" id="pomo-historico-total"></p>
+    <ul class="pomo-dias" id="pomo-historico-lista"></ul>
+    <button class="btn primary" type="button" data-fechar-dialogo>Fechar</button>
+  </div>
+</dialog>
+
+<script src="logica.js?v=24"></script>
+<script src="textos.js?v=24"></script>
+<script src="pomodoro.js?v=24"></script>
+<script src="sincronia.js?v=24"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 // Mude o número da versão sempre que alterar algum arquivo do app.
-const CACHE = 'contagem-de-dias-v21';
+const CACHE = 'contagem-de-dias-v24';
 const ARQUIVOS = [
-  './', './index.html', './app.css', './logica.js', './textos.js', './sincronia.js', './app.js', './manifest.webmanifest',
+  './', './index.html', './app.css', './logica.js', './textos.js', './sincronia.js', './pomodoro.js', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './icon-badge.png',
   './fonts/big-shoulders-display-700.woff2', './fonts/big-shoulders-display-800.woff2',
   './fonts/instrument-sans-400.woff2', './fonts/instrument-sans-600.woff2'

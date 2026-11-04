@@ -11,6 +11,7 @@ public/
   app.css, app.js       estilo e interface
   textos.js             todas as frases do app, com variações
   logica.js             lógica pura (dias, marcos, economia, check-in, migração v1→v2)
+  pomodoro.js           lógica pura do Pomodoro (ciclo 25/5/15, pausar, pular, parar, histórico por dia)
   sincronia.js          notificações: inscrição no push e espelho do estado no servidor (falha de rede nunca quebra o app)
   fonts/                Big Shoulders Display e Instrument Sans (woff2, latin)
   sw.js                 service worker (rede primeiro; offline pelo cache; mostra as notificações e trata o clique)
