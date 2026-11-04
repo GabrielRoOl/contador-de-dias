@@ -122,4 +122,40 @@ class BancoTest {
         assertEquals(300_000, banco.estadoJson("d1")!!.length)
         assertNull(banco.estadoJson("nao-existe"))
     }
+
+    private fun bytesDoBanco(): ByteArray = dir.listFiles { f -> f.name.startsWith("t.db") }!!.map { it.readBytes() }.fold(ByteArray(0)) { a, b -> a + b }
+    private fun ocorrencias(onde: ByteArray, texto: String) = String(onde, Charsets.ISO_8859_1).windowed(texto.length).count { it == texto }
+
+    @Test fun `apagar um dispositivo não deixa o texto no arquivo do banco`() {
+        novo()
+        banco.salvarEstado("d1", """{"nome":"MARCADOR_PEQUENO_123"}""", "UTC", "09:00", 2)
+        banco.salvarEstado("d1", "MARCADOR_GRANDE_456" + "y".repeat(20_000), "UTC", "09:00", 3) // passa de uma página: vai para páginas de overflow
+        assertTrue(banco.apagar("d1"))
+        val bytes = bytesDoBanco()
+        assertEquals(0, ocorrencias(bytes, "MARCADOR_PEQUENO_123"), "restos do estado antigo no banco ou no WAL")
+        assertEquals(0, ocorrencias(bytes, "MARCADOR_GRANDE_456"), "restos do estado apagado no banco ou no WAL")
+    }
+
+    @Test fun `a limpeza de inativos também apaga de verdade`() {
+        novo("velho", 100)
+        banco.salvarEstado("velho", "MARCADOR_VELHO_789", "UTC", "09:00", 100)
+        assertEquals(1, banco.limparInativos(500))
+        assertEquals(0, ocorrencias(bytesDoBanco(), "MARCADOR_VELHO_789"))
+    }
+
+    @Test fun `abrir um banco antigo limpa os restos que ele já tinha`() {
+        val arquivo = File(dir, "antigo.db").path
+        java.sql.DriverManager.getConnection("jdbc:sqlite:$arquivo").use { c ->
+            c.createStatement().use {
+                it.execute("PRAGMA journal_mode = WAL")
+                it.execute("CREATE TABLE dispositivos (id TEXT PRIMARY KEY, segredo_hash BLOB NOT NULL, criado_em INTEGER NOT NULL, atualizado_em INTEGER NOT NULL, fuso TEXT NOT NULL, hora_resumo TEXT NOT NULL, estado_json TEXT NOT NULL, push_endpoint TEXT, push_p256dh TEXT, push_auth TEXT, ultimo_envio TEXT, tentativa_data TEXT, tentativas INTEGER NOT NULL DEFAULT 0, proxima_tentativa INTEGER NOT NULL DEFAULT 0)")
+                it.execute("PRAGMA user_version = 1")
+                it.execute("INSERT INTO dispositivos (id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, estado_json) VALUES ('x', x'00', 1, 1, 'UTC', '09:00', 'MARCADOR_ANTIGO_321')")
+                it.execute("DELETE FROM dispositivos") // sem secure_delete: o texto fica no arquivo
+            }
+        }
+        Banco(arquivo) // migra
+        val bytes = dir.listFiles { f -> f.name.startsWith("antigo.db") }!!.map { it.readBytes() }.fold(ByteArray(0)) { a, b -> a + b }
+        assertEquals(0, ocorrencias(bytes, "MARCADOR_ANTIGO_321"))
+    }
 }

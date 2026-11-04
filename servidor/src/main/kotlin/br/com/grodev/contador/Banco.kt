@@ -36,6 +36,8 @@ class Banco(private val caminho: String) {
                 it.execute("PRAGMA busy_timeout = 5000")
                 it.execute("PRAGMA foreign_keys = ON")
                 it.execute("PRAGMA synchronous = NORMAL")
+                // Sem isto o SQLite só marca o espaço como livre e o texto apagado continua legível no arquivo.
+                it.execute("PRAGMA secure_delete = ON")
             }
             bloco(c)
         }
@@ -68,7 +70,14 @@ class Banco(private val caminho: String) {
                 it.execute("PRAGMA user_version = 1")
             }
         }
+        if (versao < 2) {
+            // Bancos criados antes do secure_delete podem ter restos de dados apagados: o VACUUM reescreve o arquivo sem eles.
+            c.createStatement().use { it.execute("VACUUM"); it.execute("PRAGMA user_version = 2") }
+        }
     }
+
+    /** Esvazia o WAL, onde ainda ficam as versões antigas das páginas, depois de apagar dados pessoais. */
+    private fun Connection.limparWal() = createStatement().use { it.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
 
     private fun ResultSet.dispositivo() = Dispositivo(
         id = getString("id"), segredoHash = getBytes("segredo_hash"), criadoEm = getLong("criado_em"), atualizadoEm = getLong("atualizado_em"),
@@ -134,6 +143,7 @@ class Banco(private val caminho: String) {
 
     fun apagar(id: String): Boolean = usar { c ->
         c.prepareStatement("DELETE FROM dispositivos WHERE id = ?").use { it.setString(1, id); it.executeUpdate() == 1 }
+            .also { c.limparWal() }
     }
 
     /**
@@ -174,5 +184,6 @@ class Banco(private val caminho: String) {
     /** Apaga quem não sincroniza há muito tempo (LGPD: não guardar dados parados). Devolve quantos foram apagados. */
     fun limparInativos(limiteAtualizacao: Long): Int = usar { c ->
         c.prepareStatement("DELETE FROM dispositivos WHERE atualizado_em < ?").use { it.setLong(1, limiteAtualizacao); it.executeUpdate() }
+            .also { c.limparWal() }
     }
 }
