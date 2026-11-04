@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Contagem de Dias</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#E8EDF2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E161B" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <div>
+      <h1>Contagem de Dias</h1>
+      <p>Há quanto tempo você parou de fazer algo.</p>
+    </div>
+    <button class="btn primary" id="toggle-form" type="button" aria-expanded="false" aria-controls="new-form">Nova contagem</button>
+  </header>
+
+  <form class="panel form" id="new-form" hidden novalidate>
+    <h2>Nova contagem</h2>
+    <div class="field">
+      <label for="f-name">O que você parou de fazer</label>
+      <input id="f-name" type="text" maxlength="60" placeholder="Ex.: refrigerante, cigarro, redes sociais" autocomplete="off">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label for="f-date">Data de início</label>
+        <input id="f-date" type="date">
+      </div>
+      <div class="field">
+        <label for="f-time">Hora</label>
+        <input id="f-time" type="time">
+      </div>
+    </div>
+    <p class="hint">Pode ser uma data que já passou. A contagem começa a partir dela.</p>
+    <p class="error" id="f-error" role="alert"></p>
+    <button class="btn primary" type="submit">Iniciar contagem</button>
+  </form>
+
+  <section class="list" id="list" aria-label="Suas contagens"></section>
+  <p class="foot">Tudo é salvo automaticamente neste aparelho.</p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

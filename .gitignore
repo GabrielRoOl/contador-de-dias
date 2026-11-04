@@ -1,0 +1,19 @@
+# segredos (chaves VAPID, variáveis de ambiente)
+.env
+.env.*
+*.pem
+
+# dependências e build
+node_modules/
+build/
+.gradle/
+*.jar
+
+# banco de dados local
+*.db
+*.sqlite
+
+# editores / sistema
+.idea/
+.vscode/
+.DS_Store
