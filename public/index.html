@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="app.css">
-<script>try{var v=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias.visual;if(v)document.documentElement.setAttribute('data-visual',v)}catch(e){}</script>
+<script>try{var p=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias,r=document.documentElement;if(p.visual)r.setAttribute('data-visual',p.visual);if(p.modo==='claro')r.setAttribute('data-theme','light');else if(p.modo==='escuro')r.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
 <main class="wrap">
@@ -78,6 +78,15 @@
       <button class="icone-btn" type="button" data-fechar-dialogo aria-label="Fechar ajustes">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
+    </div>
+    <div class="field">
+      <span class="rotulo" id="a-modo-rotulo">Modo</span>
+      <div class="seg tres" role="radiogroup" aria-labelledby="a-modo-rotulo">
+        <label><input type="radio" name="a-modo" value="auto"><span>Automático</span></label>
+        <label><input type="radio" name="a-modo" value="claro"><span>Claro</span></label>
+        <label><input type="radio" name="a-modo" value="escuro"><span>Escuro</span></label>
+      </div>
+      <p class="hint">Automático segue o tema do aparelho.</p>
     </div>
     <div class="field">
       <span class="rotulo" id="a-visual-rotulo">Visual</span>

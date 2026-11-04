@@ -9,6 +9,7 @@
   var CHAVE_V2 = 'contagem-de-dias:v2';
   var TIPOS = ['parar', 'manter'];
   var VISUAIS = ['futurista', 'classico'];
+  var MODOS = ['auto', 'claro', 'escuro'];
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function plural(n, a, b) { return n === 1 ? a : b; }
@@ -224,7 +225,7 @@
 
   /* ---------- estado, migração e armazenamento ---------- */
   function preferenciasPadrao(fuso) {
-    return { horaResumo: '09:00', fuso: fuso || 'America/Sao_Paulo', visual: 'futurista' };
+    return { horaResumo: '09:00', fuso: fuso || 'America/Sao_Paulo', visual: 'futurista', modo: 'auto' };
   }
 
   /* Completa o que faltar (dados de versões anteriores) e troca valores inválidos pelo padrão. */
@@ -232,6 +233,7 @@
     var padrao = preferenciasPadrao(fuso);
     var p = Object.assign({}, padrao, prefs && typeof prefs === 'object' ? prefs : {});
     if (VISUAIS.indexOf(p.visual) === -1) p.visual = padrao.visual;
+    if (MODOS.indexOf(p.modo) === -1) p.modo = padrao.modo;
     if (!/^\d{2}:\d{2}$/.test(p.horaResumo)) p.horaResumo = padrao.horaResumo;
     return p;
   }
@@ -280,7 +282,7 @@
   }
 
   return {
-    DAY: DAY, CHAVE_V1: CHAVE_V1, CHAVE_V2: CHAVE_V2, VISUAIS: VISUAIS, plural: plural,
+    DAY: DAY, CHAVE_V1: CHAVE_V1, CHAVE_V2: CHAVE_V2, VISUAIS: VISUAIS, MODOS: MODOS, plural: plural,
     calcular: calcular, dataLocal: dataLocal, ordinal: ordinal,
     adicionarAnos: adicionarAnos, diasAteAniversario: diasAteAniversario, anosCompletos: anosCompletos,
     marcoDoDia: marcoDoDia, proximoMarco: proximoMarco, progressoCiclos: progressoCiclos,

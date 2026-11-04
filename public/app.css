@@ -122,6 +122,7 @@ button, input { font: inherit; color: inherit; }
 }
 .field input:focus { border-color: var(--accent); box-shadow: var(--glow); outline: none; }
 .seg { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg.tres { grid-template-columns: repeat(3, 1fr); }
 .seg label { position: relative; display: flex; }
 .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .seg span { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; min-height: 48px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 12px; font-weight: 600; font-size: 15px; }

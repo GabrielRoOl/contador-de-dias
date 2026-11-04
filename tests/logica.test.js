@@ -322,7 +322,7 @@ test.describe('migração v1 -> v2', () => {
     });
     assert.deepEqual(v2.contagens.map((c) => c.inicio), [1761000000000, 1750000000123]);
     assert.equal(v2.atualizadoEm, 1762000000000);
-    assert.deepEqual(v2.preferencias, { horaResumo: '09:00', fuso: 'America/Sao_Paulo', visual: 'futurista' });
+    assert.deepEqual(v2.preferencias, { horaResumo: '09:00', fuso: 'America/Sao_Paulo', visual: 'futurista', modo: 'auto' });
   });
   test('recorde ausente vira zero', () => {
     const v2 = L.migrarV1({ counters: [{ id: 'a', name: 'n', start: 1 }] }, AGORA);
@@ -463,17 +463,23 @@ test.describe('atualizarContagem', () => {
 
 test.describe('preferências e visual', () => {
   test('o padrão é futurista, 09:00', () => {
-    assert.deepEqual(L.preferenciasPadrao('UTC'), { horaResumo: '09:00', fuso: 'UTC', visual: 'futurista' });
+    assert.deepEqual(L.preferenciasPadrao('UTC'), { horaResumo: '09:00', fuso: 'UTC', visual: 'futurista', modo: 'auto' });
     assert.deepEqual(L.VISUAIS, ['futurista', 'classico']);
+    assert.deepEqual(L.MODOS, ['auto', 'claro', 'escuro']);
   });
   test('completa preferências de dados antigos sem o campo visual', () => {
     assert.deepEqual(L.normalizarPreferencias({ horaResumo: '07:30', fuso: 'America/Recife' }, 'UTC'),
-      { horaResumo: '07:30', fuso: 'America/Recife', visual: 'futurista' });
+      { horaResumo: '07:30', fuso: 'America/Recife', visual: 'futurista', modo: 'auto' });
   });
   test('visual e horário inválidos voltam ao padrão', () => {
     const p = L.normalizarPreferencias({ visual: 'neon', horaResumo: '7h30' }, 'UTC');
     assert.equal(p.visual, 'futurista');
     assert.equal(p.horaResumo, '09:00');
+  });
+  test('modo inválido volta ao automático; claro e escuro são mantidos', () => {
+    assert.equal(L.normalizarPreferencias({ modo: 'sepia' }).modo, 'auto');
+    assert.equal(L.normalizarPreferencias({ modo: 'claro' }).modo, 'claro');
+    assert.equal(L.normalizarPreferencias({ modo: 'escuro' }).modo, 'escuro');
   });
   test('mantém o visual clássico', () => {
     assert.equal(L.normalizarPreferencias({ visual: 'classico' }).visual, 'classico');
@@ -486,7 +492,7 @@ test.describe('preferências e visual', () => {
     const v2 = { versao: 2, preferencias: { horaResumo: '06:00', fuso: 'UTC' }, contagens: [], atualizadoEm: 1 };
     const s = armazenamentoFalso({ [L.CHAVE_V2]: JSON.stringify(v2) });
     const r = L.carregarOuMigrar(s, AGORA, 'UTC');
-    assert.deepEqual(r.estado.preferencias, { horaResumo: '06:00', fuso: 'UTC', visual: 'futurista' });
+    assert.deepEqual(r.estado.preferencias, { horaResumo: '06:00', fuso: 'UTC', visual: 'futurista', modo: 'auto' });
   });
   test('carregar uma v2 com visual clássico o mantém', () => {
     const v2 = { versao: 2, preferencias: { horaResumo: '09:00', fuso: 'UTC', visual: 'classico' }, contagens: [], atualizadoEm: 1 };

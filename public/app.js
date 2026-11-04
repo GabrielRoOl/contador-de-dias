@@ -46,6 +46,7 @@
       somenteLeitura = true;
       ui.erro = 'Não consegui ler seus dados salvos (' + e.message + '). Nada foi apagado nem será sobrescrito.';
     }
+    aplicarModo(estado.preferencias.modo);
     aplicarVisual(estado.preferencias.visual);
     if (!somenteLeitura && estado.preferencias.fuso !== fusoLocal()) {
       estado.preferencias.fuso = fusoLocal();
@@ -57,7 +58,24 @@
     try { estado = L.salvar(localStorage, estado, Date.now()); ui.erro = ''; }
     catch (e) { ui.erro = 'Não foi possível salvar neste aparelho. Libere espaço ou verifique as permissões do navegador.'; }
   }
-  function aplicarVisual(v) { document.documentElement.setAttribute('data-visual', v); }
+  var metasTema = Array.prototype.slice.call(document.querySelectorAll('meta[name="theme-color"]'));
+  /* A barra do navegador acompanha a cor de fundo realmente em uso, seja qual for o visual e o modo. */
+  function sincronizarCorBarra() {
+    var cor = getComputedStyle(document.body).backgroundColor;
+    metasTema.forEach(function (m) { m.setAttribute('content', cor); });
+  }
+  function aplicarVisual(v) { document.documentElement.setAttribute('data-visual', v); sincronizarCorBarra(); }
+  function aplicarModo(m) {
+    var raiz = document.documentElement;
+    if (m === 'claro') raiz.setAttribute('data-theme', 'light');
+    else if (m === 'escuro') raiz.setAttribute('data-theme', 'dark');
+    else raiz.removeAttribute('data-theme');
+    sincronizarCorBarra();
+  }
+  function marcarOpcao(nome, valor) {
+    var r = document.querySelector('input[name="' + nome + '"][value="' + valor + '"]');
+    if (r) r.checked = true;
+  }
   function achar(id) { return estado.contagens.filter(function (c) { return c.id === id; })[0]; }
   function substituir(nova) {
     estado.contagens = estado.contagens.map(function (c) { return c.id === nova.id ? nova : c; });
@@ -284,13 +302,23 @@
   var dialogo = document.getElementById('ajustes');
   document.getElementById('toggle-ajustes').addEventListener('click', function () {
     document.getElementById('a-hora').value = estado.preferencias.horaResumo;
-    document.querySelector('input[name="a-visual"][value="' + estado.preferencias.visual + '"]').checked = true;
+    marcarOpcao('a-modo', estado.preferencias.modo);
+    marcarOpcao('a-visual', estado.preferencias.visual);
     document.getElementById('a-fuso').textContent = 'Fuso do aparelho: ' + estado.preferencias.fuso + '.';
     dialogo.showModal();
   });
   [dialogoNova, dialogo].forEach(function (d) {
     d.addEventListener('click', function (e) {
       if (e.target === d || e.target.closest('[data-fechar-dialogo]')) d.close();
+    });
+  });
+
+  document.querySelectorAll('input[name="a-modo"]').forEach(function (r) {
+    r.addEventListener('change', function (e) {
+      if (L.MODOS.indexOf(e.target.value) === -1) return;
+      estado.preferencias.modo = e.target.value;
+      aplicarModo(e.target.value);
+      persist();
     });
   });
 
@@ -409,6 +437,7 @@
 
   /* ---------- início ---------- */
   carregar();
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', sincronizarCorBarra);
   render();
   setInterval(tick, 15000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
