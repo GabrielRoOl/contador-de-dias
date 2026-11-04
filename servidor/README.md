@@ -8,11 +8,11 @@ Kotlin + Ktor (CIO) + SQLite. Serve o app em `/contador/`, guarda o estado de ca
 mvn test                      # 167 testes (precisa de Node só para regerar as fixtures)
 mvn -DskipTests package       # gera target/contador.jar (fat jar, ~18 MB)
 java -jar target/contador.jar gerar-vapid     # imprime as chaves VAPID para o .env
-java -jar target/contador.jar gerar-convite   # imprime o CONVITE para o .env
+java -jar target/contador.jar gerar-admin     # imprime o ADMIN para o .env
 java -Xmx160m -jar target/contador.jar        # sobe o servidor (lê o .env da pasta atual)
 ```
 
-Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor sobe, mas sem enviar notificações. Com `CONVITE` no `.env` (mín. 16 caracteres), `POST /dispositivos` exige o cabeçalho `X-Convite` (o app pede o código nos Ajustes); sem `CONVITE` o cadastro é aberto e o servidor avisa no log.
+Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor sobe, mas sem enviar notificações. Com `ADMIN` no `.env` (mín. 16 caracteres), `POST /dispositivos` exige o cabeçalho `X-Convite`: ou a chave de administrador (o aparelho vira administrador) ou um **convite individual de uso único** (20 símbolos, vale 7 dias, só o hash é guardado). O administrador gera, lista e revoga convites nos Ajustes do app. Sem `ADMIN` o cadastro é aberto, não há convites e o servidor avisa no log.
 
 ## API (`/contador/api`)
 
@@ -20,12 +20,15 @@ Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor 
 |---|---|
 | `GET /saude` | `{ok, push}` |
 | `GET /chave-publica` | chave VAPID pública, para o `pushManager.subscribe` |
-| `POST /dispositivos` | cria um dispositivo anônimo: `{id, segredo}` (só o hash do segredo é guardado). Com `CONVITE` configurado exige `X-Convite`: 403 igual para ausente e errado; 10 tentativas por hora por endereço, certas ou erradas |
+| `POST /dispositivos` | cria um dispositivo anônimo: `{id, segredo}` (só o hash do segredo é guardado). Com `ADMIN` configurado exige `X-Convite`: 403 igual para ausente, errado, usado, revogado e expirado; 10 tentativas por hora por endereço, certas ou erradas |
 | `PUT /dispositivos/{id}/estado` | sincroniza as contagens e preferências (JSON do modelo v2) |
 | `PUT /dispositivos/{id}/push` | grava a inscrição (`{endpoint, keys:{p256dh, auth}}`) |
 | `DELETE /dispositivos/{id}` | apaga tudo do dispositivo |
+| `GET /dispositivos/{id}/convites` | só administrador (403 para os outros): lista os convites, sem os códigos |
+| `POST /dispositivos/{id}/convites` | só administrador: `{nome}` → `{id, codigo, expiraEm}`; o código só aparece nesta resposta; no máximo 10 pendentes, 20 por hora |
+| `DELETE /dispositivos/{id}/convites/{convite}` | só administrador: revoga o convite; se já foi usado, apaga o aparelho que o usou |
 
-As três últimas exigem `Authorization: Bearer <segredo>`. Id desconhecido e segredo errado dão o mesmo 401.
+As rotas com `{id}` exigem `Authorization: Bearer <segredo>`. Id desconhecido e segredo errado dão o mesmo 401.
 
 ## Segurança
 

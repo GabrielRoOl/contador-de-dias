@@ -10,22 +10,22 @@ import kotlin.test.assertNull
 class ConfigTest {
     private val semArquivo = File(createTempDirectory("config-teste").toFile(), "nao-existe.env")
 
-    @Test fun `sem CONVITE o cadastro é aberto`() {
-        assertNull(Config.deAmbiente(emptyMap(), semArquivo).convite)
-        assertNull(Config.deAmbiente(mapOf("CONVITE" to "   "), semArquivo).convite)
+    @Test fun `sem ADMIN o cadastro é aberto e não há convites`() {
+        assertNull(Config.deAmbiente(emptyMap(), semArquivo).admin)
+        assertNull(Config.deAmbiente(mapOf("ADMIN" to "   "), semArquivo).admin)
     }
 
-    @Test fun `CONVITE válido é lido do ambiente`() {
-        assertEquals("a".repeat(16), Config.deAmbiente(mapOf("CONVITE" to "a".repeat(16)), semArquivo).convite)
+    @Test fun `ADMIN válido é lido do ambiente`() {
+        assertEquals("a".repeat(16), Config.deAmbiente(mapOf("ADMIN" to "a".repeat(16)), semArquivo).admin)
     }
 
-    @Test fun `convite curto demais é recusado na configuração`() {
-        val e = assertFailsWith<IllegalStateException> { Config.deAmbiente(mapOf("CONVITE" to "curto"), semArquivo) }
-        assertEquals(true, "CONVITE" in e.message!! && "16" in e.message!!)
+    @Test fun `chave de administrador curta demais é recusado na configuração`() {
+        val e = assertFailsWith<IllegalStateException> { Config.deAmbiente(mapOf("ADMIN" to "curto"), semArquivo) }
+        assertEquals(true, "ADMIN" in e.message!! && "16" in e.message!!)
     }
 
-    @Test fun `CONVITE também vem do arquivo env`() {
-        val env = File(semArquivo.parentFile, ".env").apply { writeText("CONVITE=\"${"z".repeat(20)}\"\n") }
-        assertEquals("z".repeat(20), Config.deAmbiente(emptyMap(), env).convite)
+    @Test fun `ADMIN também vem do arquivo env`() {
+        val env = File(semArquivo.parentFile, ".env").apply { writeText("ADMIN=\"${"z".repeat(20)}\"\n") }
+        assertEquals("z".repeat(20), Config.deAmbiente(emptyMap(), env).admin)
     }
 }

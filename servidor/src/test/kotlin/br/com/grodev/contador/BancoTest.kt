@@ -196,4 +196,40 @@ class BancoTest {
         }
         assertEquals(5, Banco(arquivo).bytesTotais())
     }
+
+    @Test fun `convite de uso único mesmo com pedidos simultâneos`() {
+        val hash = Seguranca.hash("CODIGO")
+        banco.criarConvite("c1", hash, "Maria", 100, 1_000)
+        val resultados = java.util.concurrent.CopyOnWriteArrayList<Boolean>()
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+        val largada = java.util.concurrent.CountDownLatch(1)
+        (1..8).forEach { n ->
+            pool.submit {
+                largada.await()
+                resultados += try { banco.cadastrarComConvite(hash, 200, "d$n", Seguranca.hash("s$n"), "{}", "UTC", "09:00") } catch (_: Exception) { false }
+            }
+        }
+        largada.countDown(); pool.shutdown(); pool.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)
+        assertEquals(1, resultados.count { it }, "exatamente um cadastro: $resultados")
+        assertEquals(1, banco.contarDispositivos())
+        assertEquals("usado", banco.listarConvites().single().estado(300))
+    }
+
+    @Test fun `convite expirado, revogado ou inexistente não cria dispositivo`() {
+        banco.criarConvite("e", Seguranca.hash("EXP"), "e", 100, 150)
+        banco.criarConvite("r", Seguranca.hash("REV"), "r", 100, 1_000)
+        banco.revogarConvite("r")
+        assertFalse(banco.cadastrarComConvite(Seguranca.hash("EXP"), 150, "x1", Seguranca.hash("s"), "{}", "UTC", "09:00"))
+        assertFalse(banco.cadastrarComConvite(Seguranca.hash("REV"), 200, "x2", Seguranca.hash("s"), "{}", "UTC", "09:00"))
+        assertFalse(banco.cadastrarComConvite(Seguranca.hash("NAO-EXISTE"), 200, "x3", Seguranca.hash("s"), "{}", "UTC", "09:00"))
+        assertEquals(0, banco.contarDispositivos())
+    }
+
+    @Test fun `convites pendentes contam só os que ainda valem e a limpeza tira os vencidos antigos`() {
+        banco.criarConvite("a", Seguranca.hash("A"), "a", 100, 1_000)
+        banco.criarConvite("b", Seguranca.hash("B"), "b", 100, 150)
+        assertEquals(1, banco.convitesPendentes(200))
+        assertEquals(1, banco.limparConvitesVelhos(500))
+        assertEquals(listOf("a"), banco.listarConvites().map { it.id })
+    }
 }

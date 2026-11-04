@@ -21,9 +21,9 @@ fun main(args: Array<String>) {
         return
     }
 
-    if (args.firstOrNull() == "gerar-convite") {
-        println("# Cole esta linha no arquivo .env (que não vai para o git). Quem não tiver o código não consegue cadastrar um aparelho.")
-        println("CONVITE=${Seguranca.novoConvite()}")
+    if (args.firstOrNull() == "gerar-admin") {
+        println("# Cole esta linha no arquivo .env (que não vai para o git). É a chave de administrador: guarde num gerenciador de senhas.")
+        println("ADMIN=${Seguranca.novoAdmin()}")
         return
     }
 
@@ -34,7 +34,7 @@ fun main(args: Array<String>) {
         System.err.println("As chaves VAPID do .env são inválidas. Gere novas com: java -jar contador.jar gerar-vapid"); exitProcess(2)
     }
     if (chaves == null) log.warn("VAPID_PUBLIC/VAPID_PRIVATE ausentes: o servidor roda, mas sem enviar notificações. Use: java -jar contador.jar gerar-vapid")
-    if (config.convite == null) log.warn("CONVITE ausente: qualquer pessoa pode cadastrar um aparelho. Para restringir: java -jar contador.jar gerar-convite")
+    if (config.admin == null) log.warn("ADMIN ausente: qualquer pessoa pode cadastrar um aparelho e não há convites. Para restringir: java -jar contador.jar gerar-admin")
     if (config.pastaEstatica == null) log.warn("STATIC_DIR não encontrado: só a API será servida")
 
     val banco = Banco(config.caminhoBanco)
@@ -46,6 +46,6 @@ fun main(args: Array<String>) {
 
     val servidor = embeddedServer(CIO, port = config.porta, host = config.endereco) { modulo(config, banco, chaves) }
     Runtime.getRuntime().addShutdownHook(Thread { log.info("encerrando"); escopo.cancel(); servidor.stop(500, 2000) })
-    log.info("contador no ar em http://{}:{}{}/ (push {}, cadastro {})", config.endereco, config.porta, PREFIXO, if (chaves != null) "ativo" else "desligado", if (config.convite != null) "por convite" else "aberto")
+    log.info("contador no ar em http://{}:{}{}/ (push {}, cadastro {})", config.endereco, config.porta, PREFIXO, if (chaves != null) "ativo" else "desligado", if (config.admin != null) "por convite" else "aberto")
     servidor.start(wait = true)
 }

@@ -60,11 +60,29 @@ class SegurancaTest {
         }
     }
 
-    @Test fun `convite confere em tempo constante e recusa o que não é igual`() {
-        val c = Seguranca.novoConvite()
-        assertTrue(c.length >= Config.TAMANHO_MINIMO_CONVITE && Validacao.idValido(c.take(10)))
-        assertNotEquals(c, Seguranca.novoConvite())
+    @Test fun `chave de administrador confere e recusa o que não é igual`() {
+        val c = Seguranca.novoAdmin()
+        assertTrue(c.length >= Config.TAMANHO_MINIMO_ADMIN)
+        assertNotEquals(c, Seguranca.novoAdmin())
         assertTrue(Seguranca.conviteConfere(c, c))
         listOf(null, "", c + "x", c.dropLast(1), c.uppercase(), " $c", "x".repeat(500)).forEach { assertFalse(Seguranca.conviteConfere(it, c), "'$it'") }
+    }
+
+    @Test fun `código de convite individual tem 100 bits, formato legível e é aleatório`() {
+        val codigos = (1..300).map { Seguranca.novoCodigoConvite() }
+        assertEquals(300, codigos.toSet().size)
+        assertTrue(codigos.all { Regex("^([A-HJ-NP-Z2-9]{4}-){4}[A-HJ-NP-Z2-9]{4}$").matches(it) }, codigos.first())
+        assertTrue(codigos.none { c -> c.any { it in "IO01" } }, "sem caracteres que se confundem")
+    }
+
+    @Test fun `normaliza o que a pessoa digitou`() {
+        val c = Seguranca.novoCodigoConvite()
+        val base = Seguranca.normalizarCodigoConvite(c)
+        assertEquals(20, base!!.length)
+        assertEquals(base, Seguranca.normalizarCodigoConvite(c.lowercase()))
+        assertEquals(base, Seguranca.normalizarCodigoConvite(c.replace("-", " ")))
+        assertEquals(base, Seguranca.normalizarCodigoConvite(" $c "))
+        assertEquals(base, Seguranca.normalizarCodigoConvite(c.replace("-", "")))
+        listOf(null, "", "ABC", c + "A", c.dropLast(1), "x".repeat(100), c.replace("-", "!"), c.replaceFirst(c[0], '0'), "<script>").forEach { assertNull(Seguranca.normalizarCodigoConvite(it), "'$it'") }
     }
 }

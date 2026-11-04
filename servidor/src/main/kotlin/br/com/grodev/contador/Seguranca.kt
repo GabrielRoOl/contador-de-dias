@@ -14,14 +14,26 @@ object Seguranca {
 
     fun novoId(): String = bytes(16)
     fun novoSegredo(): String = bytes(32)
-    fun novoConvite(): String = bytes(32)
+    fun novoAdmin(): String = bytes(32)
+
+    private const val ALFABETO_CODIGO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // 32 símbolos, sem I, O, 0 e 1 que se confundem
+
+    /** Convite individual: 20 símbolos de 5 bits = 100 bits, em grupos de 4 para digitar e ditar (XXXX-XXXX-XXXX-XXXX-XXXX). */
+    fun novoCodigoConvite(): String = (1..20).map { ALFABETO_CODIGO[aleatorio.nextInt(32)] }.chunked(4).joinToString("-") { it.joinToString("") }
+
+    /** Letras maiúsculas e dígitos do que a pessoa digitou (ignora hífens, espaços e caixa). Null se não tiver o tamanho de um convite. */
+    fun normalizarCodigoConvite(texto: String?): String? {
+        if (texto == null || texto.length > 60) return null
+        val limpo = texto.uppercase().filter { it in ALFABETO_CODIGO }
+        return limpo.takeIf { it.length == 20 && texto.uppercase().all { c -> c in ALFABETO_CODIGO || c == '-' || c == ' ' } }
+    }
 
     fun hash(segredo: String): ByteArray = MessageDigest.getInstance("SHA-256").digest(segredo.toByteArray(Charsets.UTF_8))
 
     /** Comparação em tempo constante. */
     fun confere(segredo: String, hashEsperado: ByteArray): Boolean = MessageDigest.isEqual(hash(segredo), hashEsperado)
 
-    /** Código de convite recebido x configurado, em tempo constante (compara os hashes, que têm sempre o mesmo tamanho). */
+    /** Código do administrador recebido x configurado, em tempo constante (compara os hashes, que têm sempre o mesmo tamanho). */
     fun conviteConfere(recebido: String?, esperado: String): Boolean =
         recebido != null && recebido.length <= 200 && MessageDigest.isEqual(hash(recebido), hash(esperado))
 

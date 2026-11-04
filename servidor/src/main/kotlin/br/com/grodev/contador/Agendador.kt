@@ -125,6 +125,7 @@ class Agendador(
         val agora = relogio()
         val apagados = banco.limparInativos(agora - inatividadeMax.toMillis()) +
             banco.limparSemInscricao(agora - nuncaUsadoMax.toMillis(), agora - semInscricaoMax.toMillis())
+        banco.limparConvitesVelhos(agora - Duration.ofDays(30).toMillis())
         if (apagados > 0) log.info("{} dispositivos inativos apagados", apagados)
         return apagados
     }

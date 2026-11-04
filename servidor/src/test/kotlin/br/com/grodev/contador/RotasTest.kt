@@ -424,57 +424,165 @@ class RotasTest {
         assertFalse(Regex("style=|\\.setAttribute\\('style'|insertAdjacentHTML", RegexOption.IGNORE_CASE).containsMatchIn(app), "app.js não pode montar style= nem HTML por fora do esc()")
     }
 
-    // ---------------------------------------------------------------- convite
+    // ---------------------------------------------------------------- convites
 
-    private val convite = "convite-de-teste-0123456789"
-    private fun comConvite(tentativas: LimitadorTaxa = LimitadorTaxa(10_000, 3_600_000) { agora }, bloco: suspend ApplicationTestBuilder.(HttpClient) -> Unit) =
-        comApp(Config(pastaEstatica = pasta, convite = convite, caminhoBanco = File(dir, "t.db").path), tentativasConvite = tentativas, bloco = bloco)
+    private val admin = "admin-de-teste-0123456789"
+    private val limitePadrao get() = LimitadorTaxa(10_000, 3_600_000) { agora }
+    private fun comConvites(tentativas: LimitadorTaxa = limitePadrao, bloco: suspend ApplicationTestBuilder.(HttpClient) -> Unit) =
+        comApp(Config(pastaEstatica = pasta, admin = admin, caminhoBanco = File(dir, "t.db").path), tentativasConvite = tentativas, bloco = bloco)
 
-    @Test fun `com convite configurado, sem o código ou com código errado não cadastra`() = comConvite { c ->
-        val semCodigo = c.post("/contador/api/dispositivos")
-        val errado = c.post("/contador/api/dispositivos") { header("X-Convite", "$convite-x") }
-        val vazio = c.post("/contador/api/dispositivos") { header("X-Convite", "") }
-        val maiuscula = c.post("/contador/api/dispositivos") { header("X-Convite", convite.uppercase()) }
-        listOf(semCodigo, errado, vazio, maiuscula).forEach { assertEquals(HttpStatusCode.Forbidden, it.status) }
-        assertEquals(1, listOf(semCodigo, errado, vazio, maiuscula).map { it.bodyAsText() }.toSet().size, "mesma resposta: não diz se faltou ou errou")
-        assertEquals(0, banco.contarDispositivos(), "nada foi criado")
+    private suspend fun HttpClient.cadastra(codigo: String?, ip: String? = null) = post("/contador/api/dispositivos") {
+        if (codigo != null) header("X-Convite", codigo)
+        if (ip != null) header("CF-Connecting-IP", ip)
     }
 
-    @Test fun `com o código certo cadastra, e o código não aparece na resposta`() = comConvite { c ->
-        val r = c.post("/contador/api/dispositivos") { header("X-Convite", convite) }
+    private fun HttpResponse.credenciais(texto: String): Pair<String, String> =
+        Json.parseToJsonElement(texto).jsonObject.let { it["id"]!!.jsonPrimitive.content to it["segredo"]!!.jsonPrimitive.content }
+
+    private suspend fun HttpClient.administrador(): Pair<String, String> {
+        val r = cadastra(admin); assertEquals(HttpStatusCode.Created, r.status)
+        return r.credenciais(r.bodyAsText())
+    }
+
+    private suspend fun HttpClient.gerarConvite(adm: Pair<String, String>, nome: String = "Maria"): HttpResponse =
+        post("/contador/api/dispositivos/${adm.first}/convites") {
+            header(HttpHeaders.Authorization, "Bearer ${adm.second}"); contentType(ContentType.Application.Json); setBody("""{"nome":"$nome"}""")
+        }
+
+    private fun codigoDe(r: String) = Json.parseToJsonElement(r).jsonObject["codigo"]!!.jsonPrimitive.content
+
+    @Test fun `com ADMIN configurado, sem código, errado ou vazio não cadastra e a resposta é sempre a mesma`() = comConvites { c ->
+        val rs = listOf(c.cadastra(null), c.cadastra("$admin-x"), c.cadastra(""), c.cadastra(admin.uppercase()), c.cadastra("ABCD-EFGH-JKLM-NPQR-STUV"))
+        rs.forEach { assertEquals(HttpStatusCode.Forbidden, it.status) }
+        assertEquals(1, rs.map { it.bodyAsText() }.toSet().size, "mesma resposta: não diz se faltou, errou ou o convite não existe")
+        assertEquals(0, banco.contarDispositivos())
+    }
+
+    @Test fun `o código de administrador cadastra um aparelho administrador`() = comConvites { c ->
+        val r = c.cadastra(admin)
         assertEquals(HttpStatusCode.Created, r.status)
-        assertFalse(convite in r.bodyAsText())
-        assertEquals(1, banco.contarDispositivos())
+        val texto = r.bodyAsText()
+        assertFalse(admin in texto)
+        assertTrue(banco.obter(r.credenciais(texto).first)!!.admin)
     }
 
-    @Test fun `o convite vale só para cadastrar, os outros endpoints usam o segredo do aparelho`() = comConvite { c ->
-        val r = c.post("/contador/api/dispositivos") { header("X-Convite", convite) }
-        val o = Json.parseToJsonElement(r.bodyAsText()).jsonObject
-        val (id, segredo) = o["id"]!!.jsonPrimitive.content to o["segredo"]!!.jsonPrimitive.content
-        assertEquals(HttpStatusCode.NoContent, c.putJson("/contador/api/dispositivos/$id/estado", estadoOk, segredo).status)
-        assertEquals(HttpStatusCode.NoContent, c.delete("/contador/api/dispositivos/$id") { header(HttpHeaders.Authorization, "Bearer $segredo") }.status)
-        assertEquals(HttpStatusCode.OK, c.get("/contador/api/saude").status)
-        assertEquals(HttpStatusCode.OK, c.get("/contador/api/chave-publica").status)
+    @Test fun `administrador gera convite que cadastra uma única vez e o aparelho convidado não é administrador`() = comConvites { c ->
+        val adm = c.administrador()
+        val r = c.gerarConvite(adm, "Maria")
+        assertEquals(HttpStatusCode.Created, r.status)
+        val codigo = codigoDe(r.bodyAsText())
+        assertTrue(Regex("^([A-Z2-9]{4}-){4}[A-Z2-9]{4}$").matches(codigo), codigo)
+        assertFalse(banco.listarConvites().single().let { String(it.nome.toByteArray()) == codigo }, "o código em si não é guardado")
+
+        val primeiro = c.cadastra(codigo.lowercase().replace("-", " "))
+        assertEquals(HttpStatusCode.Created, primeiro.status, "aceita minúsculas e espaços no lugar dos hífens")
+        val convidado = primeiro.credenciais(primeiro.bodyAsText())
+        assertFalse(banco.obter(convidado.first)!!.admin)
+
+        assertEquals(HttpStatusCode.Forbidden, c.cadastra(codigo).status, "uso único")
+        val lista = c.get("/contador/api/dispositivos/${adm.first}/convites") { header(HttpHeaders.Authorization, "Bearer ${adm.second}") }
+        val item = Json.parseToJsonElement(lista.bodyAsText()).let { it as kotlinx.serialization.json.JsonArray }.single().jsonObject
+        assertEquals("usado", item["estado"]!!.jsonPrimitive.content); assertEquals("Maria", item["nome"]!!.jsonPrimitive.content)
+        assertFalse(codigo in lista.bodyAsText() && codigo.replace("-", "") in lista.bodyAsText(), "a lista não traz o código")
     }
 
-    @Test fun `toda tentativa conta no limite, até a certa, e passado o limite nem o código certo entra`() = comConvite(LimitadorTaxa(3, 3_600_000) { agora }) { c ->
-        repeat(2) { assertEquals(HttpStatusCode.Forbidden, c.post("/contador/api/dispositivos") { header("X-Convite", "errado-$it") }.status) }
-        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("X-Convite", convite) }.status)
-        val r = c.post("/contador/api/dispositivos") { header("X-Convite", convite) }
+    @Test fun `aparelho comum e quem não se autentica não gera nem lista nem revoga convites`() = comConvites { c ->
+        val adm = c.administrador()
+        val codigo = codigoDe(c.gerarConvite(adm).bodyAsText())
+        val r = c.cadastra(codigo); val comum = r.credenciais(r.bodyAsText())
+        val convite = banco.listarConvites().single().id
+        val base = "/contador/api/dispositivos/${comum.first}/convites"
+        fun HttpRequestBuilderCom(seg: String?) : io.ktor.client.request.HttpRequestBuilder.() -> Unit = { if (seg != null) header(HttpHeaders.Authorization, "Bearer $seg") }
+        assertEquals(HttpStatusCode.Forbidden, c.get(base, HttpRequestBuilderCom(comum.second)).status)
+        assertEquals(HttpStatusCode.Forbidden, c.gerarConvite(comum).status)
+        assertEquals(HttpStatusCode.Forbidden, c.delete("$base/$convite", HttpRequestBuilderCom(comum.second)).status)
+        assertEquals(HttpStatusCode.Unauthorized, c.get(base, HttpRequestBuilderCom(null)).status)
+        assertEquals(HttpStatusCode.Unauthorized, c.get(base, HttpRequestBuilderCom("segredo-errado")).status)
+        assertEquals(HttpStatusCode.Unauthorized, c.get("/contador/api/dispositivos/${adm.first}/convites", HttpRequestBuilderCom(comum.second)).status, "o segredo de um aparelho não vale no id de outro")
+        assertEquals(1, banco.listarConvites().size, "nada foi gerado nem revogado")
+        assertNotNull(banco.obter(comum.first))
+    }
+
+    @Test fun `convite vale até o último instante do prazo`() = comConvites { c ->
+        val adm = c.administrador()
+        val codigo = codigoDe(c.gerarConvite(adm).bodyAsText())
+        agora += VALIDADE_CONVITE_MS - 1
+        assertEquals(HttpStatusCode.Created, c.cadastra(codigo).status)
+    }
+
+    @Test fun `convite expirado não cadastra`() = comConvites { c ->
+        val adm = c.administrador()
+        val codigo = codigoDe(c.gerarConvite(adm).bodyAsText())
+        agora += VALIDADE_CONVITE_MS
+        assertEquals(HttpStatusCode.Forbidden, c.cadastra(codigo).status)
+        assertEquals(1, banco.contarDispositivos(), "só o administrador")
+        assertEquals("expirado", banco.listarConvites().single().estado(agora))
+    }
+
+    @Test fun `revogar convite pendente impede o uso e revogar um usado apaga o aparelho convidado`() = comConvites { c ->
+        val adm = c.administrador()
+        val auth: io.ktor.client.request.HttpRequestBuilder.() -> Unit = { header(HttpHeaders.Authorization, "Bearer ${adm.second}") }
+        val pendente = codigoDe(c.gerarConvite(adm, "A").bodyAsText())
+        val usado = codigoDe(c.gerarConvite(adm, "B").bodyAsText())
+        val r = c.cadastra(usado); val convidado = r.credenciais(r.bodyAsText())
+        val ids = banco.listarConvites().associate { it.nome to it.id }
+        assertEquals(HttpStatusCode.NoContent, c.delete("/contador/api/dispositivos/${adm.first}/convites/${ids["A"]}", auth).status)
+        assertEquals(HttpStatusCode.Forbidden, c.cadastra(pendente).status)
+        assertEquals(HttpStatusCode.NoContent, c.delete("/contador/api/dispositivos/${adm.first}/convites/${ids["B"]}", auth).status)
+        assertNull(banco.obter(convidado.first), "o aparelho que usou o convite foi apagado")
+        assertNotNull(banco.obter(adm.first), "o administrador continua")
+        assertEquals(HttpStatusCode.NotFound, c.delete("/contador/api/dispositivos/${adm.first}/convites/nao-existe", auth).status)
+        assertEquals(setOf("revogado"), banco.listarConvites().map { it.estado(agora) }.toSet())
+    }
+
+    @Test fun `no máximo 10 convites pendentes, nome obrigatório e limite de criação`() = comConvites { c ->
+        val adm = c.administrador()
+        repeat(MAX_CONVITES_PENDENTES) { assertEquals(HttpStatusCode.Created, c.gerarConvite(adm, "P$it").status) }
+        assertEquals(HttpStatusCode.Conflict, c.gerarConvite(adm, "demais").status)
+        listOf("", "   ", "x".repeat(41), "a\u0000b").forEach {
+            val r = c.post("/contador/api/dispositivos/${adm.first}/convites") {
+                header(HttpHeaders.Authorization, "Bearer ${adm.second}"); contentType(ContentType.Application.Json); setBody("""{"nome":${Json.encodeToString(kotlinx.serialization.serializer<String>(), it)}}""")
+            }
+            assertEquals(HttpStatusCode.BadRequest, r.status, "nome '${it.take(5)}'")
+        }
+    }
+
+    @Test fun `toda tentativa conta no limite, até a certa, e passado o limite nem o código certo entra`() = comConvites(LimitadorTaxa(3, 3_600_000) { agora }) { c ->
+        repeat(2) { assertEquals(HttpStatusCode.Forbidden, c.cadastra("errado-$it").status) }
+        assertEquals(HttpStatusCode.Created, c.cadastra(admin).status)
+        val r = c.cadastra(admin)
         assertEquals(HttpStatusCode.TooManyRequests, r.status)
         assertEquals("3600", r.headers[HttpHeaders.RetryAfter])
         agora += 3_600_000
-        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("X-Convite", convite) }.status, "a janela renova")
+        assertEquals(HttpStatusCode.Created, c.cadastra(admin).status, "a janela renova")
     }
 
-    @Test fun `as tentativas são por endereço, uma pessoa errando não trava a outra`() = comConvite(LimitadorTaxa(1, 3_600_000) { agora }) { c ->
-        assertEquals(HttpStatusCode.Forbidden, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "200.1.1.1") }.status)
-        assertEquals(HttpStatusCode.TooManyRequests, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "200.1.1.1"); header("X-Convite", convite) }.status)
-        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("CF-Connecting-IP", "200.2.2.2"); header("X-Convite", convite) }.status)
+    @Test fun `as tentativas são por endereço, uma pessoa errando não trava a outra`() = comConvites(LimitadorTaxa(1, 3_600_000) { agora }) { c ->
+        assertEquals(HttpStatusCode.Forbidden, c.cadastra(null, "200.1.1.1").status)
+        assertEquals(HttpStatusCode.TooManyRequests, c.cadastra(admin, "200.1.1.1").status)
+        assertEquals(HttpStatusCode.Created, c.cadastra(admin, "200.2.2.2").status)
     }
 
-    @Test fun `sem convite configurado o cadastro continua aberto, com ou sem cabeçalho`() = comApp { c ->
-        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos").status)
-        assertEquals(HttpStatusCode.Created, c.post("/contador/api/dispositivos") { header("X-Convite", "qualquer") }.status)
+    @Test fun `convite não é gasto quando o cadastro não acontece por servidor cheio`() = comApp(Config(pastaEstatica = pasta, admin = admin, maxDispositivos = 2, caminhoBanco = File(dir, "t.db").path)) { c ->
+        val adm = c.administrador()
+        val codigo = codigoDe(c.gerarConvite(adm).bodyAsText())
+        c.cadastra(admin)
+        assertEquals(HttpStatusCode.ServiceUnavailable, c.cadastra(codigo).status)
+        assertEquals("pendente", banco.listarConvites().single().estado(agora), "o convite continua valendo")
+    }
+
+    @Test fun `administrador nunca é apagado pela limpeza de parados`() = comConvites { c ->
+        val adm = c.administrador()
+        val dia = 86_400_000L
+        banco.limparSemInscricao(agora + 400 * dia, agora + 400 * dia)
+        banco.limparInativos(agora + 400 * dia)
+        assertNotNull(banco.obter(adm.first))
+    }
+
+    @Test fun `sem ADMIN o cadastro continua aberto e não existem convites`() = comApp { c ->
+        assertEquals(HttpStatusCode.Created, c.cadastra(null).status)
+        assertEquals(HttpStatusCode.Created, c.cadastra("qualquer").status)
+        val (id, seg) = c.novo()
+        assertEquals(HttpStatusCode.Forbidden, c.gerarConvite(id to seg).status, "ninguém é administrador")
     }
 }

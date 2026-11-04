@@ -4,6 +4,16 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.ResultSet
 
+/** Convite individual de uso único. O código em si nunca é guardado, só o hash. */
+class Convite(val id: String, val nome: String, val criadoEm: Long, val expiraEm: Long, val usadoEm: Long?, val usadoPor: String?, val revogado: Boolean) {
+    fun estado(agora: Long) = when {
+        revogado -> "revogado"
+        usadoEm != null -> "usado"
+        agora >= expiraEm -> "expirado"
+        else -> "pendente"
+    }
+}
+
 class Dispositivo(
     val id: String,
     val segredoHash: ByteArray,
@@ -20,6 +30,7 @@ class Dispositivo(
     val tentativas: Int,
     val proximaTentativa: Long,
     val tamanho: Long = 0,
+    val admin: Boolean = false,
 ) {
     val temInscricao get() = pushEndpoint != null && pushP256dh != null && pushAuth != null
 }
@@ -82,6 +93,24 @@ class Banco(private val caminho: String) {
                 it.execute("PRAGMA user_version = 3")
             }
         }
+        if (versao < 4) {
+            c.createStatement().use {
+                it.execute("ALTER TABLE dispositivos ADD COLUMN admin INTEGER NOT NULL DEFAULT 0")
+                it.execute(
+                    """CREATE TABLE convites (
+                        id TEXT PRIMARY KEY,
+                        hash BLOB NOT NULL UNIQUE,
+                        nome TEXT NOT NULL,
+                        criado_em INTEGER NOT NULL,
+                        expira_em INTEGER NOT NULL,
+                        usado_em INTEGER,
+                        usado_por TEXT,
+                        revogado INTEGER NOT NULL DEFAULT 0
+                    )""",
+                )
+                it.execute("PRAGMA user_version = 4")
+            }
+        }
     }
 
     /** Esvazia o WAL, onde ainda ficam as versões antigas das páginas, depois de apagar dados pessoais. */
@@ -92,7 +121,7 @@ class Banco(private val caminho: String) {
         fuso = getString("fuso"), horaResumo = getString("hora_resumo"), estadoJson = getString("estado_json"),
         pushEndpoint = getString("push_endpoint"), pushP256dh = getString("push_p256dh"), pushAuth = getString("push_auth"),
         ultimoEnvio = getString("ultimo_envio"), tentativaData = getString("tentativa_data"), tentativas = getInt("tentativas"),
-        proximaTentativa = getLong("proxima_tentativa"), tamanho = getLong("tamanho"),
+        proximaTentativa = getLong("proxima_tentativa"), tamanho = getLong("tamanho"), admin = getInt("admin") == 1,
     )
 
     fun contarDispositivos(): Int = usar { c ->
@@ -104,12 +133,12 @@ class Banco(private val caminho: String) {
         c.createStatement().use { s -> s.executeQuery("SELECT COALESCE(SUM(tamanho), 0) FROM dispositivos").use { it.getLong(1) } }
     }
 
-    fun criarDispositivo(id: String, segredoHash: ByteArray, agora: Long, estadoJson: String, fuso: String, horaResumo: String) = usar { c ->
+    fun criarDispositivo(id: String, segredoHash: ByteArray, agora: Long, estadoJson: String, fuso: String, horaResumo: String, admin: Boolean = false) = usar { c ->
         c.prepareStatement(
-            "INSERT INTO dispositivos (id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, estado_json, tamanho) VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO dispositivos (id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, estado_json, tamanho, admin) VALUES (?,?,?,?,?,?,?,?,?)",
         ).use {
             it.setString(1, id); it.setBytes(2, segredoHash); it.setLong(3, agora); it.setLong(4, agora)
-            it.setString(5, fuso); it.setString(6, horaResumo); it.setString(7, estadoJson); it.setLong(8, estadoJson.toByteArray().size.toLong())
+            it.setString(5, fuso); it.setString(6, horaResumo); it.setString(7, estadoJson); it.setLong(8, estadoJson.toByteArray().size.toLong()); it.setInt(9, if (admin) 1 else 0)
             it.executeUpdate()
         }
     }
@@ -167,7 +196,7 @@ class Banco(private val caminho: String) {
         c.createStatement().use { s ->
             s.executeQuery(
                 "SELECT id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, '' AS estado_json, push_endpoint, push_p256dh, push_auth, " +
-                    "ultimo_envio, tentativa_data, tentativas, proxima_tentativa, tamanho FROM dispositivos WHERE push_endpoint IS NOT NULL",
+                    "ultimo_envio, tentativa_data, tentativas, proxima_tentativa, tamanho, admin FROM dispositivos WHERE push_endpoint IS NOT NULL",
             ).use { rs -> buildList { while (rs.next()) add(rs.dispositivo()) } }
         }
     }
@@ -196,7 +225,7 @@ class Banco(private val caminho: String) {
 
     /** Apaga quem não sincroniza há muito tempo (LGPD: não guardar dados parados). Devolve quantos foram apagados. */
     fun limparInativos(limiteAtualizacao: Long): Int = usar { c ->
-        c.prepareStatement("DELETE FROM dispositivos WHERE atualizado_em < ?").use { it.setLong(1, limiteAtualizacao); it.executeUpdate() }
+        c.prepareStatement("DELETE FROM dispositivos WHERE admin = 0 AND atualizado_em < ?").use { it.setLong(1, limiteAtualizacao); it.executeUpdate() }
             .also { c.limparWal() }
     }
 
@@ -207,7 +236,87 @@ class Banco(private val caminho: String) {
      */
     fun limparSemInscricao(nuncaUsadoAntes: Long, paradoAntes: Long): Int = usar { c ->
         c.prepareStatement(
-            "DELETE FROM dispositivos WHERE push_endpoint IS NULL AND ((atualizado_em = criado_em AND criado_em < ?) OR atualizado_em < ?)",
+            "DELETE FROM dispositivos WHERE admin = 0 AND push_endpoint IS NULL AND ((atualizado_em = criado_em AND criado_em < ?) OR atualizado_em < ?)",
         ).use { it.setLong(1, nuncaUsadoAntes); it.setLong(2, paradoAntes); it.executeUpdate() }.also { c.limparWal() }
+    }
+
+    // ---------------------------------------------------------------- convites
+
+    fun criarConvite(id: String, hash: ByteArray, nome: String, agora: Long, expiraEm: Long) = usar { c ->
+        c.prepareStatement("INSERT INTO convites (id, hash, nome, criado_em, expira_em) VALUES (?,?,?,?,?)").use {
+            it.setString(1, id); it.setBytes(2, hash); it.setString(3, nome); it.setLong(4, agora); it.setLong(5, expiraEm); it.executeUpdate()
+        }
+    }
+
+    fun convitesPendentes(agora: Long): Int = usar { c ->
+        c.prepareStatement("SELECT COUNT(*) FROM convites WHERE usado_em IS NULL AND revogado = 0 AND expira_em > ?").use {
+            it.setLong(1, agora); it.executeQuery().use { rs -> rs.getInt(1) }
+        }
+    }
+
+    fun listarConvites(limite: Int = 100): List<Convite> = usar { c ->
+        c.prepareStatement("SELECT id, nome, criado_em, expira_em, usado_em, usado_por, revogado FROM convites ORDER BY criado_em DESC, rowid DESC LIMIT ?").use { ps ->
+            ps.setInt(1, limite)
+            ps.executeQuery().use { rs ->
+                buildList {
+                    while (rs.next()) add(Convite(rs.getString(1), rs.getString(2), rs.getLong(3), rs.getLong(4), rs.getLong(5).takeUnless { rs.wasNull() }, rs.getString(6), rs.getInt(7) == 1))
+                }
+            }
+        }
+    }
+
+    /**
+     * Usa o convite e cria o dispositivo numa transação só: o convite vale para um único cadastro mesmo com pedidos
+     * simultâneos, e só é gasto se o dispositivo for mesmo criado. Devolve false se o convite não existe, já foi usado,
+     * foi revogado ou expirou.
+     */
+    fun cadastrarComConvite(hash: ByteArray, agora: Long, id: String, segredoHash: ByteArray, estadoJson: String, fuso: String, horaResumo: String): Boolean = usar { c ->
+        c.autoCommit = false
+        try {
+            val usado = c.prepareStatement("UPDATE convites SET usado_em = ?, usado_por = ? WHERE hash = ? AND usado_em IS NULL AND revogado = 0 AND expira_em > ?").use {
+                it.setLong(1, agora); it.setString(2, id); it.setBytes(3, hash); it.setLong(4, agora); it.executeUpdate() == 1
+            }
+            if (usado) {
+                c.prepareStatement(
+                    "INSERT INTO dispositivos (id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, estado_json, tamanho) VALUES (?,?,?,?,?,?,?,?)",
+                ).use {
+                    it.setString(1, id); it.setBytes(2, segredoHash); it.setLong(3, agora); it.setLong(4, agora)
+                    it.setString(5, fuso); it.setString(6, horaResumo); it.setString(7, estadoJson); it.setLong(8, estadoJson.toByteArray().size.toLong())
+                    it.executeUpdate()
+                }
+            }
+            c.commit()
+            usado
+        } catch (e: Exception) {
+            c.rollback(); throw e
+        }
+    }
+
+    enum class ResultadoRevogacao { NAO_ENCONTRADO, REVOGADO, APARELHO_APAGADO }
+
+    /** Convite pendente: é revogado. Convite já usado: apaga o aparelho que o usou (nunca um administrador). */
+    fun revogarConvite(id: String): ResultadoRevogacao = usar { c ->
+        c.autoCommit = false
+        try {
+            val usadoPor = c.prepareStatement("SELECT usado_por FROM convites WHERE id = ?").use { ps ->
+                ps.setString(1, id)
+                ps.executeQuery().use { rs -> if (rs.next()) rs.getString(1) to true else null to false }
+            }
+            if (!usadoPor.second) { c.rollback(); return@usar ResultadoRevogacao.NAO_ENCONTRADO }
+            c.prepareStatement("UPDATE convites SET revogado = 1 WHERE id = ?").use { it.setString(1, id); it.executeUpdate() }
+            val apagou = usadoPor.first?.let { dispositivo ->
+                c.prepareStatement("DELETE FROM dispositivos WHERE id = ? AND admin = 0").use { it.setString(1, dispositivo); it.executeUpdate() == 1 }
+            } ?: false
+            c.commit()
+            if (apagou) c.limparWal()
+            if (apagou) ResultadoRevogacao.APARELHO_APAGADO else ResultadoRevogacao.REVOGADO
+        } catch (e: Exception) {
+            c.rollback(); throw e
+        }
+    }
+
+    /** Convites que ninguém usou e já expiraram há muito tempo não servem nem de registro. */
+    fun limparConvitesVelhos(antes: Long): Int = usar { c ->
+        c.prepareStatement("DELETE FROM convites WHERE usado_em IS NULL AND expira_em < ?").use { it.setLong(1, antes); it.executeUpdate() }
     }
 }
