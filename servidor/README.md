@@ -1,0 +1,44 @@
+# Servidor do Contador de Dias
+
+Kotlin + Ktor (CIO) + SQLite. Serve o app em `/contador/`, guarda o estado de cada dispositivo e envia **um aviso por dia** por Web Push.
+
+## Comandos
+
+```bash
+mvn test                      # 133 testes (precisa de Node só para regerar as fixtures)
+mvn -DskipTests package       # gera target/contador.jar (fat jar, ~18 MB)
+java -jar target/contador.jar gerar-vapid     # imprime as chaves VAPID para o .env
+java -Xmx160m -jar target/contador.jar        # sobe o servidor (lê o .env da pasta atual)
+```
+
+Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor sobe, mas sem enviar notificações.
+
+## API (`/contador/api`)
+
+| Método e caminho | O que faz |
+|---|---|
+| `GET /saude` | `{ok, push}` |
+| `GET /chave-publica` | chave VAPID pública, para o `pushManager.subscribe` |
+| `POST /dispositivos` | cria um dispositivo anônimo: `{id, segredo}` (só o hash do segredo é guardado) |
+| `PUT /dispositivos/{id}/estado` | sincroniza as contagens e preferências (JSON do modelo v2) |
+| `PUT /dispositivos/{id}/push` | grava a inscrição (`{endpoint, keys:{p256dh, auth}}`) |
+| `DELETE /dispositivos/{id}` | apaga tudo do dispositivo |
+
+As três últimas exigem `Authorization: Bearer <segredo>`. Id desconhecido e segredo errado dão o mesmo 401.
+
+## Segurança
+
+- Endpoint de push só em HTTPS e só de serviços conhecidos (FCM, Mozilla, Apple, Windows): evita que o servidor seja induzido a chamar URLs internas (SSRF). Redirecionamentos não são seguidos.
+- Corpo limitado (512 KB), validação de tudo que chega, SQL parametrizado, limite por IP (o IP real vem do `CF-Connecting-IP`, só aceito quando a conexão vem de 127.0.0.1).
+- Arquivos do app com `Cache-Control: no-cache` e cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`.
+- Dispositivos sem sincronizar há 365 dias são apagados (LGPD). Logs não trazem segredos nem endpoints.
+
+## Agendador
+
+Roda a cada minuto. Envia para o dispositivo se já passou da `horaResumo` (no fuso dele), ainda estamos na janela de 3 h, e o dia não recebeu o aviso. O dia só conta como enviado após o sucesso; erros temporários repetem a cada 5 min (até 5 vezes); 404/410 removem a inscrição. `TTL` de 3 h e `Topic: resumo-diario`.
+
+## Decisões
+
+- **Web Push implementado com a JVM pura** (RFC 8291 e VAPID/RFC 8292), sem BouncyCastle nem cliente HTTP assíncrono: jar menor no celular. Conferido contra a biblioteca `web-push` (usada só nos testes).
+- **`sqlite-jdbc` fixado em 3.50.3.0**: as versões seguintes deixaram de trazer a biblioteca nativa para Android (Termux). Só ficam no jar as nativas de Linux comum e de Android.
+- **Kotlin e JS dão o mesmo resultado**: `logica.js` e `textos.js` são a referência; `node scripts/fixtures.js` gera ~8,8 mil casos (7 fusos, horário de verão, 29/02) em `src/test/resources/fixtures-js.json` e `ParidadeJsTest` confere. Mudou uma regra ou frase? Rode o script de novo.
