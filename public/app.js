@@ -4,7 +4,7 @@
   var DAY = L.DAY;
 
   var estado = L.estadoVazio(Date.now());
-  var ui = { formAberto: false, ajustesAbertos: false, painel: null, historico: {}, dia: '', erro: '' };
+  var ui = { painel: null, historico: {}, dia: '', erro: '' };
   var somenteLeitura = false;
   var exemploInicio = Date.now() - (12 * DAY + 5 * 36e5 + 18 * 6e4);
 
@@ -230,20 +230,11 @@
 
   function render() {
     var lista = document.getElementById('list');
-    var form = document.getElementById('new-form');
-    var ajustes = document.getElementById('ajustes');
-    var toggle = document.getElementById('toggle-form');
-    var toggleAj = document.getElementById('toggle-ajustes');
-    form.hidden = !ui.formAberto;
-    ajustes.hidden = !ui.ajustesAbertos;
-    toggle.textContent = ui.formAberto ? 'Fechar' : 'Nova contagem';
-    toggle.setAttribute('aria-expanded', ui.formAberto ? 'true' : 'false');
-    toggleAj.setAttribute('aria-expanded', ui.ajustesAbertos ? 'true' : 'false');
     ui.dia = hoje();
 
     var aviso = ui.erro ? '<p class="error" role="alert">' + esc(ui.erro) + '</p>' : '';
     if (!estado.contagens.length) {
-      lista.innerHTML = aviso + '<p class="empty">Nenhuma contagem ainda. Escolha a data em que você começou, mesmo que já tenha passado, e o tempo é calculado a partir dela. Veja como fica:</p>' + cardHTML(exemplo(), true);
+      lista.innerHTML = aviso + '<p class="empty">Nenhuma contagem ainda. Toque em Nova contagem e escolha a data em que você começou, mesmo que já tenha passado: o tempo é calculado a partir dela. Veja como fica:</p>' + cardHTML(exemplo(), true);
       return;
     }
     var ordenadas = estado.contagens.slice().sort(function (a, b) { return a.inicio - b.inicio; });
@@ -251,7 +242,7 @@
   }
 
   function tick() {
-    if (ui.dia !== hoje() && !ui.painel && !ui.formAberto) { render(); return; }
+    if (ui.dia !== hoje() && !ui.painel) { render(); return; }
     var mapa = {};
     estado.contagens.forEach(function (c) { mapa[c.id] = c; });
     document.querySelectorAll('.live').forEach(function (el) {
@@ -281,20 +272,23 @@
     ajustarFormulario();
   }
 
+  var dialogoNova = document.getElementById('nova');
   document.getElementById('toggle-form').addEventListener('click', function () {
-    ui.formAberto = !ui.formAberto;
-    if (ui.formAberto) prepararFormulario();
-    render();
-    if (ui.formAberto) document.getElementById('f-name').focus();
+    prepararFormulario();
+    dialogoNova.showModal();
+    document.getElementById('f-name').focus();
   });
 
+  var dialogo = document.getElementById('ajustes');
   document.getElementById('toggle-ajustes').addEventListener('click', function () {
-    ui.ajustesAbertos = !ui.ajustesAbertos;
-    if (ui.ajustesAbertos) {
-      document.getElementById('a-hora').value = estado.preferencias.horaResumo;
-      document.getElementById('a-fuso').textContent = 'Fuso do aparelho: ' + estado.preferencias.fuso + '.';
-    }
-    render();
+    document.getElementById('a-hora').value = estado.preferencias.horaResumo;
+    document.getElementById('a-fuso').textContent = 'Fuso do aparelho: ' + estado.preferencias.fuso + '.';
+    dialogo.showModal();
+  });
+  [dialogoNova, dialogo].forEach(function (d) {
+    d.addEventListener('click', function (e) {
+      if (e.target === d || e.target.closest('[data-fechar-dialogo]')) d.close();
+    });
   });
 
   document.getElementById('a-hora').addEventListener('change', function (e) {
@@ -323,7 +317,7 @@
     persist();
     document.getElementById('f-name').value = '';
     err.textContent = '';
-    ui.formAberto = false;
+    dialogoNova.close();
     render();
   });
 
@@ -403,8 +397,6 @@
 
   /* ---------- início ---------- */
   carregar();
-  ui.formAberto = estado.contagens.length === 0 && !somenteLeitura;
-  if (ui.formAberto) prepararFormulario();
   render();
   setInterval(tick, 15000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });

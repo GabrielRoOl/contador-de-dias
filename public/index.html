@@ -19,24 +19,25 @@
       <h1>Contagem de Dias</h1>
       <p>Parar de algo ou manter um hábito, um dia de cada vez.</p>
     </div>
-    <div class="top-actions">
-      <button class="btn" id="toggle-ajustes" type="button" aria-expanded="false" aria-controls="ajustes">Ajustes</button>
-      <button class="btn primary" id="toggle-form" type="button" aria-expanded="false" aria-controls="new-form">Nova contagem</button>
-    </div>
+    <button class="icone-btn" id="toggle-ajustes" type="button" aria-haspopup="dialog" aria-label="Ajustes">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"/></svg>
+    </button>
   </header>
 
-  <section class="panel form" id="ajustes" hidden aria-label="Ajustes">
-    <h2>Ajustes</h2>
-    <div class="field">
-      <label for="a-hora">Horário do resumo diário</label>
-      <input id="a-hora" type="time">
-    </div>
-    <p class="hint" id="a-fuso"></p>
-    <p class="hint">O aviso diário passa a chegar quando as notificações forem ativadas, em uma próxima etapa.</p>
-  </section>
+  <button class="btn primary big" id="toggle-form" type="button" aria-haspopup="dialog">Nova contagem</button>
 
-  <form class="panel form" id="new-form" hidden novalidate>
-    <h2>Nova contagem</h2>
+  <section class="list" id="list" aria-label="Suas contagens"></section>
+  <p class="foot">Tudo é salvo automaticamente neste aparelho.</p>
+</main>
+
+<dialog id="nova" aria-labelledby="nova-titulo">
+  <form class="dialogo" id="new-form" novalidate>
+    <div class="dialogo-topo">
+      <h2 id="nova-titulo">Nova contagem</h2>
+      <button class="icone-btn" type="button" data-fechar-dialogo aria-label="Fechar">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
     <fieldset class="seg">
       <legend class="sr">Tipo de contagem</legend>
       <label><input type="radio" name="f-tipo" value="parar" checked><span>Parei de fazer</span></label>
@@ -68,10 +69,25 @@
     <p class="error" id="f-error" role="alert"></p>
     <button class="btn primary" type="submit">Iniciar contagem</button>
   </form>
+</dialog>
 
-  <section class="list" id="list" aria-label="Suas contagens"></section>
-  <p class="foot">Tudo é salvo automaticamente neste aparelho.</p>
-</main>
+<dialog id="ajustes" aria-labelledby="ajustes-titulo">
+  <div class="dialogo">
+    <div class="dialogo-topo">
+      <h2 id="ajustes-titulo">Ajustes</h2>
+      <button class="icone-btn" type="button" data-fechar-dialogo aria-label="Fechar ajustes">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="field">
+      <label for="a-hora">Horário do resumo diário</label>
+      <input id="a-hora" type="time">
+    </div>
+    <p class="hint" id="a-fuso"></p>
+    <p class="hint">O aviso diário passa a chegar quando as notificações forem ativadas, em uma próxima etapa.</p>
+    <button class="btn primary" type="button" data-fechar-dialogo>Concluído</button>
+  </div>
+</dialog>
 
 <script src="logica.js"></script>
 <script src="textos.js"></script>
