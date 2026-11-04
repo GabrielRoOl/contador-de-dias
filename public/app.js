@@ -37,6 +37,17 @@
     return new Date(a.getFullYear(), a.getMonth(), a.getDate() - 1, a.getHours(), a.getMinutes()).getTime();
   }
 
+  /* ---------- notificações e espelho no servidor ---------- */
+  var sync = window.Sincronia.criar({
+    storage: window.localStorage,
+    navigator: navigator,
+    Notification: window.Notification,
+    PushManager: window.PushManager,
+    fetch: function (u, i) { return window.fetch(u, i); },
+    setTimeout: function (f, ms) { return window.setTimeout(f, ms); },
+    clearTimeout: function (t) { window.clearTimeout(t); }
+  });
+
   /* ---------- armazenamento ---------- */
   function carregar() {
     try {
@@ -56,7 +67,8 @@
   function persist() {
     if (somenteLeitura) return;
     try { estado = L.salvar(localStorage, estado, Date.now()); ui.erro = ''; }
-    catch (e) { ui.erro = 'Não foi possível salvar neste aparelho. Libere espaço ou verifique as permissões do navegador.'; }
+    catch (e) { ui.erro = 'Não foi possível salvar neste aparelho. Libere espaço ou verifique as permissões do navegador.'; return; }
+    sync.agendar(estado);
   }
   var metasTema = Array.prototype.slice.call(document.querySelectorAll('meta[name="theme-color"]'));
   /* A barra do navegador acompanha a cor de fundo realmente em uso, seja qual for o visual e o modo. */
@@ -299,12 +311,60 @@
     document.getElementById('f-name').focus();
   });
 
+  var notif = { ocupado: false, erro: '' };
+  var MSG_NOTIF = {
+    'nao-suportado': 'Este navegador não mostra notificações do app. No Chrome do Android, instale o app na tela inicial.',
+    bloqueado: 'As notificações estão bloqueadas para este site. Libere nas configurações do navegador para ativar.',
+    desligado: 'Receba um resumo por dia no horário escolhido acima.'
+  };
+  var ERRO_ATIVAR = {
+    dispensado: 'Sem a permissão o app não consegue avisar. Você pode tentar de novo quando quiser.',
+    rede: 'Sem conexão com o servidor agora. Suas contagens continuam salvas aqui; tente de novo mais tarde.',
+    limite: 'Muitas tentativas deste endereço. Tente de novo mais tarde.',
+    'servidor-sem-push': 'O servidor não está com as notificações configuradas.',
+    inscricao: 'Não consegui registrar este aparelho para as notificações. Tente de novo.',
+    servidor: 'O servidor não respondeu como esperado. Tente de novo mais tarde.'
+  };
+  var ERRO_DESATIVAR = {
+    rede: 'Sem conexão: não consegui apagar a cópia do servidor. Tente de novo com internet.',
+    servidor: 'O servidor não respondeu como esperado. Tente de novo mais tarde.'
+  };
+  function renderNotif() {
+    var st = sync.status();
+    var texto = document.getElementById('a-notif-texto');
+    var botao = document.getElementById('a-notif-botao');
+    var semBotao = st === 'nao-suportado' || st === 'bloqueado';
+    if (notif.ocupado) texto.textContent = 'Aguarde…';
+    else if (st === 'ativo') texto.textContent = 'Ativas. Você recebe um resumo por dia às ' + estado.preferencias.horaResumo + '.';
+    else texto.textContent = MSG_NOTIF[st];
+    document.getElementById('a-notif-erro').textContent = semBotao ? '' : notif.erro;
+    document.getElementById('a-notif-nota').hidden = semBotao;
+    botao.hidden = semBotao;
+    botao.disabled = notif.ocupado;
+    botao.textContent = st === 'ativo' ? 'Desativar' : (notif.erro ? 'Tentar de novo' : 'Ativar notificações');
+  }
+  /* Só roda por um toque no botão: é aqui que o navegador pergunta a permissão, nunca ao abrir o app. */
+  document.getElementById('a-notif-botao').addEventListener('click', function () {
+    if (notif.ocupado) return;
+    var desativando = sync.status() === 'ativo';
+    notif.ocupado = true; notif.erro = '';
+    renderNotif();
+    (desativando ? sync.desativar() : sync.ativar(estado)).then(function (r) {
+      notif.ocupado = false;
+      if (!r.ok) notif.erro = (desativando ? ERRO_DESATIVAR : ERRO_ATIVAR)[r.motivo] || ERRO_ATIVAR.servidor;
+      renderNotif();
+    });
+  });
+  sync.ouvir(renderNotif);
+
   var dialogo = document.getElementById('ajustes');
   document.getElementById('toggle-ajustes').addEventListener('click', function () {
     document.getElementById('a-hora').value = estado.preferencias.horaResumo;
     marcarOpcao('a-modo', estado.preferencias.modo);
     marcarOpcao('a-visual', estado.preferencias.visual);
     document.getElementById('a-fuso').textContent = 'Fuso do aparelho: ' + estado.preferencias.fuso + '.';
+    notif.erro = '';
+    renderNotif();
     dialogo.showModal();
   });
   [dialogoNova, dialogo].forEach(function (d) {
@@ -332,7 +392,7 @@
   });
 
   document.getElementById('a-hora').addEventListener('change', function (e) {
-    if (/^\d{2}:\d{2}$/.test(e.target.value)) { estado.preferencias.horaResumo = e.target.value; persist(); }
+    if (/^\d{2}:\d{2}$/.test(e.target.value)) { estado.preferencias.horaResumo = e.target.value; persist(); renderNotif(); }
   });
 
   document.querySelectorAll('input[name="f-tipo"]').forEach(function (r) { r.addEventListener('change', ajustarFormulario); });
@@ -440,7 +500,13 @@
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', sincronizarCorBarra);
   render();
   setInterval(tick, 15000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) sync.descarregar();
+    else { tick(); sync.retomar(estado); }
+  });
+  window.addEventListener('online', function () { sync.retomar(estado); });
+  sync.retomar(estado);
+  sync.verificar();
 
   /* Pede ao Chrome para não apagar os dados do app e registra o modo offline */
   if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(function () {}); }

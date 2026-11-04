@@ -272,3 +272,6 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(6px);
 
 .rotulo { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .field .seg label { text-transform: none; letter-spacing: 0; font-size: 15px; font-weight: 400; color: var(--ink); }
+
+#a-notif-botao { align-self: flex-start; margin-top: 4px; }
+#a-notif-botao:disabled { opacity: 0.6; }
