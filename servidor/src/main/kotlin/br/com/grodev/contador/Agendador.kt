@@ -21,9 +21,9 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlin.coroutines.coroutineContext
 
-/** O que o service worker recebe e mostra. */
+/** O que o service worker recebe e mostra. `proxima` só vai no alarme do Pomodoro: a fase que o botão "Iniciar" da notificação começa. */
 @Serializable
-data class CargaAviso(val titulo: String, val corpo: String, val tag: String, val url: String = "./", val marco: Boolean = false)
+data class CargaAviso(val titulo: String, val corpo: String, val tag: String, val url: String = "./", val marco: Boolean = false, val proxima: String? = null)
 
 data class ResumoRodada(val enviados: Int = 0, val falhas: Int = 0, val expiradas: Int = 0, val ignorados: Int = 0)
 

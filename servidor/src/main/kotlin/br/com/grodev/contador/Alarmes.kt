@@ -71,7 +71,7 @@ class AgendadorAlarmes(
         val rotulo = a.id.take(6)
         try {
             val aviso = MensagensPomodoro.compor(a.fase, a.proxima)
-            val carga = json.encodeToString(CargaAviso.serializer(), CargaAviso(aviso.titulo, aviso.corpo, aviso.tag, MensagensPomodoro.URL))
+            val carga = json.encodeToString(CargaAviso.serializer(), CargaAviso(aviso.titulo, aviso.corpo, aviso.tag, MensagensPomodoro.URL, proxima = a.proxima))
             val resultado = try {
                 enviador.enviar(a.inscricao, carga.toByteArray(Charsets.UTF_8), ttlSegundos, aviso.tag)
             } catch (e: Exception) {

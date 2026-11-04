@@ -47,7 +47,7 @@ Roda a cada minuto. Envia para o dispositivo se já passou da `horaResumo` (no f
 
 ### Alarme do Pomodoro
 
-Segunda rotina, a cada 15 s (`AgendadorAlarmes`): manda o push dos alarmes que venceram, com `tag: pomodoro`, `url: ./#pomodoro`, TTL de 2 min e sem nenhum nome de contagem. Alarme vencido há mais que o TTL é descartado sem enviar (um "acabou o foco" atrasado só atrapalha); falha repete a cada rodada, até 3 vezes; 404/410 removem a inscrição e o alarme. O app cancela o alarme ao pausar, pular, parar ou concluir a fase com a tela aberta.
+Segunda rotina, a cada 15 s (`AgendadorAlarmes`): manda o push dos alarmes que venceram, com `tag: pomodoro`, `url: ./#pomodoro`, `proxima` (a fase que o botão "Iniciar" da notificação começa), TTL de 2 min e sem nenhum nome de contagem. Alarme vencido há mais que o TTL é descartado sem enviar (um "acabou o foco" atrasado só atrapalha); falha repete a cada rodada, até 3 vezes; 404/410 removem a inscrição e o alarme. O app cancela o alarme ao pausar, pular, parar ou concluir a fase com a tela aberta.
 
 ## Decisões
 

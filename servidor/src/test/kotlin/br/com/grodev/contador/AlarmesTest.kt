@@ -56,6 +56,7 @@ class AlarmesTest {
         val e = enviador.enviados.single()
         assertEquals("pomodoro", e.carga.tag); assertEquals("pomodoro", e.topico)
         assertEquals("./#pomodoro", e.carga.url)
+        assertEquals("pausa", e.carga.proxima, "o app usa isto para o botão \"Iniciar pausa\"")
         assertEquals(120, e.ttl)
         assertEquals("Foco concluído", e.carga.titulo)
         assertEquals("Hora da pausa de 5 min.", e.carga.corpo)
