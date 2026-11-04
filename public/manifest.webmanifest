@@ -1,14 +1,14 @@
 {
   "name": "Contagem de Dias",
   "short_name": "Contagem",
-  "description": "Conta há quantos dias você parou de fazer algo.",
+  "description": "Conta há quantos dias você parou de fazer algo ou mantém um hábito.",
   "lang": "pt-BR",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#E8EDF2",
-  "theme_color": "#2457D6",
+  "background_color": "#050912",
+  "theme_color": "#050912",
   "icons": [
     {
       "src": "icon-192.png",
