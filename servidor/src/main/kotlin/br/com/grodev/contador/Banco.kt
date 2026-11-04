@@ -136,11 +136,23 @@ class Banco(private val caminho: String) {
         c.prepareStatement("DELETE FROM dispositivos WHERE id = ?").use { it.setString(1, id); it.executeUpdate() == 1 }
     }
 
+    /**
+     * Quem tem inscrição de push, SEM o estado (`estadoJson` vem vazio): o agendador passa por todos a cada minuto e
+     * carregar centenas de KB por dispositivo esgotaria a memória. O estado de quem vai receber sai de [estadoJson].
+     */
     fun comInscricao(): List<Dispositivo> = usar { c ->
         c.createStatement().use { s ->
-            s.executeQuery("SELECT * FROM dispositivos WHERE push_endpoint IS NOT NULL").use { rs ->
-                buildList { while (rs.next()) add(rs.dispositivo()) }
-            }
+            s.executeQuery(
+                "SELECT id, segredo_hash, criado_em, atualizado_em, fuso, hora_resumo, '' AS estado_json, push_endpoint, push_p256dh, push_auth, " +
+                    "ultimo_envio, tentativa_data, tentativas, proxima_tentativa FROM dispositivos WHERE push_endpoint IS NOT NULL",
+            ).use { rs -> buildList { while (rs.next()) add(rs.dispositivo()) } }
+        }
+    }
+
+    fun estadoJson(id: String): String? = usar { c ->
+        c.prepareStatement("SELECT estado_json FROM dispositivos WHERE id = ?").use {
+            it.setString(1, id)
+            it.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else null }
         }
     }
 

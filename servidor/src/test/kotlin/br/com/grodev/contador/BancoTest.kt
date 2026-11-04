@@ -111,4 +111,15 @@ class BancoTest {
         banco.salvarEstado("d1", "'); DROP TABLE dispositivos; --", "UTC", "09:00", 1)
         assertEquals(1, banco.contarDispositivos())
     }
+
+    @Test fun `a lista do agendador não carrega o estado, só estadoJson(id) carrega`() {
+        novo()
+        banco.salvarEstado("d1", "x".repeat(300_000), "UTC", "09:00", 2)
+        banco.salvarInscricao("d1", "https://fcm.googleapis.com/x", "p", "a", 5)
+        val leve = banco.comInscricao().single()
+        assertEquals("", leve.estadoJson, "a consulta por minuto não pode trazer centenas de KB por dispositivo")
+        assertEquals("UTC", leve.fuso); assertEquals("09:00", leve.horaResumo); assertTrue(leve.temInscricao)
+        assertEquals(300_000, banco.estadoJson("d1")!!.length)
+        assertNull(banco.estadoJson("nao-existe"))
+    }
 }

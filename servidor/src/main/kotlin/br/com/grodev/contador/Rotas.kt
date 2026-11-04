@@ -43,7 +43,7 @@ import org.slf4j.LoggerFactory
 @Serializable data class InscricaoPush(val endpoint: String, val keys: ChavesInscricao)
 
 const val PREFIXO = "/contador"
-private const val MAX_CORPO_ESTADO = 512 * 1024
+private const val MAX_CORPO_ESTADO = 256 * 1024
 private const val MAX_CORPO_PUSH = 8 * 1024
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -157,7 +157,7 @@ fun Application.modulo(
                     }
                     val problemas = Validacao.erros(estado, relogio())
                     if (problemas.isNotEmpty()) return@put call.erro(HttpStatusCode.BadRequest, "Estado inválido.", problemas)
-                    banco.salvarEstado(d.id, json.encodeToString(Estado.serializer(), estado), estado.preferencias.fuso, estado.preferencias.horaResumo, relogio())
+                    banco.salvarEstado(d.id, json.encodeToString(Estado.serializer(), estado.paraServidor()), estado.preferencias.fuso, estado.preferencias.horaResumo, relogio())
                     call.respond(HttpStatusCode.NoContent)
                 }
 

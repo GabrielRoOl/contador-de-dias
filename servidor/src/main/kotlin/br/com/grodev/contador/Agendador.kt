@@ -43,6 +43,8 @@ class Agendador(
     private val inatividadeMax: Duration = Duration.ofDays(365),
     private val paralelismo: Int = 8,
     private val despachante: CoroutineDispatcher = Dispatchers.IO,
+    private val intervaloRodada: Long = 60_000,
+    private val esperaMinima: Long = 1_000,
 ) {
     private val log = LoggerFactory.getLogger(Agendador::class.java)
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
@@ -88,7 +90,7 @@ class Agendador(
         val d = a.d
         val rotulo = d.id.take(6)
         try {
-            val estado = try { json.decodeFromString<Estado>(d.estadoJson) } catch (e: Exception) {
+            val estado = try { json.decodeFromString<Estado>(banco.estadoJson(d.id) ?: return Destino.IGNORADO) } catch (e: Exception) {
                 log.warn("dispositivo {}: estado ilegível, nada enviado", rotulo); return Destino.IGNORADO
             }
             val aviso = Mensagens.compor(estado, agora, a.zona)
@@ -133,10 +135,11 @@ class Agendador(
                 executarMinuto()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // Até um erro de memória: o laço morrendo em silêncio deixaria todos sem aviso, com o servidor aparentemente saudável.
                 log.error("rodada falhou: {}", e.javaClass.simpleName)
             }
-            delay(maxOf(1_000L, 60_000L - relogio() % 60_000L))
+            delay(maxOf(esperaMinima, intervaloRodada - relogio() % intervaloRodada))
         }
     }
 }

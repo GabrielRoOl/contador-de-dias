@@ -172,6 +172,27 @@ class RotasTest {
         assertEquals(6.5, e.contagens.single().custoDia)
     }
 
+    @Test fun `o servidor guarda só o necessário, sem notas nem deslizes`() = comApp { c ->
+        val (id, segredo) = c.novo()
+        val corpo = """{"versao":2,"preferencias":{"horaResumo":"07:30","fuso":"Europe/London","visual":"classico","modo":"escuro"},"contagens":[{"id":"a1","nome":"Cigarro","tipo":"parar","inicio":1761000000000,
+            "deslizes":[{"em":1761000001000,"nota":"NOTA_PRIVADA_DE_DESLIZE"}],
+            "tentativas":[{"inicio":1,"fim":2,"dias":3,"nota":"NOTA_PRIVADA_DE_RECOMECO"},{"inicio":4,"fim":5,"dias":6,"nota":"OUTRA"}],
+            "checkins":["2026-11-02","2026-11-01","2026-11-02"]}]}"""
+        assertEquals(HttpStatusCode.NoContent, c.putJson("/contador/api/dispositivos/$id/estado", corpo, segredo).status)
+        val guardado = banco.obter(id)!!.estadoJson
+        assertFalse("NOTA_PRIVADA" in guardado || "OUTRA" in guardado, guardado)
+        val e = Json.decodeFromString(Estado.serializer(), guardado)
+        assertTrue(e.contagens.single().deslizes.isEmpty())
+        assertEquals(1, e.contagens.single().tentativas.size)
+        assertEquals(listOf("2026-11-01", "2026-11-02"), e.contagens.single().checkins)
+    }
+
+    @Test fun `corpo do estado acima de 256 KB é recusado`() = comApp { c ->
+        val (id, segredo) = c.novo()
+        val enorme = """{"versao":2,"x":"${"a".repeat(260 * 1024)}"}"""
+        assertEquals(HttpStatusCode.PayloadTooLarge, c.putJson("/contador/api/dispositivos/$id/estado", enorme, segredo).status)
+    }
+
     @Test fun `campos desconhecidos são ignorados, o resto é validado`() = comApp { c ->
         val (id, segredo) = c.novo()
         val corpo = estadoOk.replace("\"versao\":2,", "\"versao\":2,\"extra\":{\"x\":1},")
