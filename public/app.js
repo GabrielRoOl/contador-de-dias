@@ -66,11 +66,12 @@
   function aneisHTML(p, centro) {
     function anel(r, fracao, cls) {
       var f = Math.min(1, Math.max(0, fracao));
-      return '<circle class="trilho" cx="130" cy="130" r="' + r + '"/>' +
-        (f > 0 ? '<circle class="arco ' + cls + '" cx="130" cy="130" r="' + r + '" pathLength="100" stroke-dasharray="' + (Math.round(f * 1000) / 10) + ' 100" transform="rotate(-90 130 130)"/>' : '');
+      return '<circle class="trilho" cx="140" cy="140" r="' + r + '"/>' +
+        (f > 0 ? '<circle class="arco ' + cls + '" cx="140" cy="140" r="' + r + '" pathLength="100" stroke-dasharray="' + (Math.round(f * 1000) / 10) + ' 100" transform="rotate(-90 140 140)"/>' : '');
     }
-    return '<div class="aneis"><svg viewBox="0 0 260 260" aria-hidden="true">' +
-      anel(120, p.ano.fracao, 'r-ano') + anel(104, p.mes.fracao, 'r-mes') + anel(88, p.semana.fracao, 'r-semana') +
+    return '<div class="aneis"><svg viewBox="0 0 280 280" aria-hidden="true">' +
+      '<circle class="marcas" cx="140" cy="140" r="133" pathLength="100"/>' +
+      anel(119, p.ano.fracao, 'r-ano') + anel(104, p.mes.fracao, 'r-mes') + anel(89, p.semana.fracao, 'r-semana') +
       '</svg><div class="centro">' + centro + '</div></div>';
   }
 
