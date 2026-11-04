@@ -385,6 +385,44 @@ try:
         pg.click('#a-notif-botao')
         espera(lambda: 'resumo por dia' in texto_notif(pg))
         ctx.close()
+
+        # =============== convite de cadastro ===============
+        derrubar()
+        CODIGO = 'convite-e2e-0123456789abcdef'
+        AMBIENTE['CONVITE'] = CODIGO
+        check(subir() is not None, 'servidor reiniciado com CONVITE')
+        req = urllib.request.Request(BASE + 'api/dispositivos', method='POST')
+        try:
+            urllib.request.urlopen(req); status = 201
+        except urllib.error.HTTPError as e:
+            status = e.code
+        check(status == 403, 'sem o código, a API recusa o cadastro (403)')
+        antes = len(dispositivos())
+        ctx = novo_contexto(b)
+        pg, erros = abrir(ctx)
+        ajustes(pg)
+        pg.fill('#a-hora', hora_longe()); pg.dispatch_event('#a-hora', 'change')
+        check(pg.locator('#a-convite').is_hidden(), 'o campo de convite fica escondido até o servidor pedir')
+        pg.click('#a-notif-botao')
+        check(espera(lambda: 'código de convite' in pg.locator('#a-notif-erro').inner_text()), 'servidor com convite: o app explica que pede o código')
+        check(pg.locator('#a-convite').is_visible() and pg.evaluate("document.activeElement.id") == 'a-convite-campo', 'o campo aparece e recebe o foco')
+        check(pg.get_attribute('#a-convite-campo', 'type') == 'password' and pg.get_attribute('#a-convite-campo', 'autocomplete') == 'off', 'o campo é de senha e sem autocompletar')
+        check(len(dispositivos()) == antes, 'nada foi cadastrado sem o código')
+        foto(pg, '26-convite-pedido')
+        pg.fill('#a-convite-campo', 'codigo-errado-0123456789')
+        pg.click('#a-notif-botao')
+        check(espera(lambda: 'inválido' in pg.locator('#a-notif-erro').inner_text()), 'código errado: mensagem de código inválido')
+        check(pg.locator('#a-convite').is_visible() and len(dispositivos()) == antes, 'código errado: campo continua e nada é cadastrado')
+        pg.fill('#a-convite-campo', CODIGO)
+        pg.click('#a-notif-botao')
+        check(espera(lambda: texto_notif(pg).startswith('Ativas.')), 'código certo: notificações ativas')
+        check(len(dispositivos()) == antes + 1, 'código certo: aparelho cadastrado')
+        check(pg.locator('#a-convite').is_hidden() and pg.input_value('#a-convite-campo') == '', 'depois de ativar o campo some e é limpo')
+        guardado = pg.evaluate("JSON.stringify(Object.fromEntries(Object.entries(localStorage)))")
+        check(CODIGO not in guardado, 'o código de convite não fica guardado no aparelho')
+        check(not erros, f'convite sem erros de JavaScript {erros}')
+        foto(pg, '27-convite-ativo')
+        ctx.close()
         b.close()
     check(not linhas('SELECT 1 FROM dispositivos WHERE push_endpoint IS NOT NULL AND ultimo_envio IS NOT NULL'), 'o servidor nunca tentou enviar um aviso durante o teste')
 finally:

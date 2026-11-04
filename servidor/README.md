@@ -5,7 +5,7 @@ Kotlin + Ktor (CIO) + SQLite. Serve o app em `/contador/`, guarda o estado de ca
 ## Comandos
 
 ```bash
-mvn test                      # 156 testes (precisa de Node só para regerar as fixtures)
+mvn test                      # 167 testes (precisa de Node só para regerar as fixtures)
 mvn -DskipTests package       # gera target/contador.jar (fat jar, ~18 MB)
 java -jar target/contador.jar gerar-vapid     # imprime as chaves VAPID para o .env
 java -jar target/contador.jar gerar-convite   # imprime o CONVITE para o .env

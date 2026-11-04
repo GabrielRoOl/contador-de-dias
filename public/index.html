@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="app.css?v=19">
+<link rel="stylesheet" href="app.css?v=20">
 <script>try{var p=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias,r=document.documentElement;if(p.visual)r.setAttribute('data-visual',p.visual);if(p.modo==='claro')r.setAttribute('data-theme','light');else if(p.modo==='escuro')r.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
@@ -105,6 +105,11 @@
       <span class="rotulo" id="a-notif-rotulo">Notificações</span>
       <p class="hint" id="a-notif-texto" role="status" aria-live="polite"></p>
       <p class="error" id="a-notif-erro" role="alert"></p>
+      <div class="field" id="a-convite" hidden>
+        <label for="a-convite-campo">Código de convite</label>
+        <input id="a-convite-campo" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200">
+        <p class="hint">Este servidor só aceita aparelhos com convite. O código vale só para ativar e não fica guardado no aparelho.</p>
+      </div>
       <button class="btn" type="button" id="a-notif-botao" hidden></button>
       <p class="hint" id="a-notif-nota">Para avisar, uma cópia reduzida das suas contagens (sem as notas) fica no servidor, sem login. Desativar apaga essa cópia.</p>
     </div>
@@ -112,9 +117,9 @@
   </div>
 </dialog>
 
-<script src="logica.js?v=19"></script>
-<script src="textos.js?v=19"></script>
-<script src="sincronia.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="logica.js?v=20"></script>
+<script src="textos.js?v=20"></script>
+<script src="sincronia.js?v=20"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

@@ -97,6 +97,7 @@
       var cab = {};
       if (corpo !== undefined) cab['Content-Type'] = 'application/json';
       if (opcoes.auth && cred) cab.Authorization = 'Bearer ' + cred.segredo;
+      if (opcoes.convite) cab['X-Convite'] = opcoes.convite; // só no cadastro; nunca é guardado
       var ctl = typeof AbortController === 'function' ? new AbortController() : null;
       var corte = amb.setTimeout(function () { if (ctl) ctl.abort(); }, LIMITE_REDE_MS);
       var init = { method: metodo, headers: cab, cache: 'no-store' };
@@ -128,8 +129,8 @@
     function falha(motivo) { return { ok: false, motivo: motivo }; }
 
     /* Devolve {ok:true} ou {ok:false, motivo}. Motivos: nao-suportado, bloqueado, dispensado, rede, limite,
-       servidor-sem-push, servidor-cheio, inscricao. Só deve ser chamada a partir de um toque do usuário (pede a permissão). */
-    function ativar(estado, jaRecriou) {
+       servidor-sem-push, servidor-cheio, convite (o servidor pede um código), convite-invalido, inscricao. Só deve ser chamada a partir de um toque do usuário (pede a permissão). */
+    function ativar(estado, convite, jaRecriou) {
       if (!suportado()) return Promise.resolve(falha('nao-suportado'));
       var reg;
       return Promise.resolve(amb.Notification.requestPermission()).then(function (perm) {
@@ -139,7 +140,8 @@
       }).then(function (r) {
         reg = r;
         if (cred) return null;
-        return pedir('POST', 'dispositivos').then(function (resp) {
+        return pedir('POST', 'dispositivos', undefined, { convite: convite }).then(function (resp) {
+          if (resp.status === 403) throw falha(convite ? 'convite-invalido' : 'convite');
           if (resp.status === 429) throw falha('limite');
           if (resp.status === 503) throw falha('servidor-cheio');
           if (resp.status !== 201 || !resp.json || !resp.json.id || !resp.json.segredo) throw falha('rede');
@@ -184,7 +186,7 @@
         return { ok: true };
       }).catch(function (e) {
         // dispositivo apagado no servidor (ex.: ficou 1 ano sem sincronizar): começa de novo uma vez só
-        if (e && e.recriar && !jaRecriou) { cred = null; gravar(); return ativar(estado, true); }
+        if (e && e.recriar && !jaRecriou) { cred = null; gravar(); return ativar(estado, convite, true); }
         if (e && e.ok === false) return e;
         return falha(ehRede(e) ? 'rede' : 'servidor');
       });

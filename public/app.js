@@ -311,7 +311,7 @@
     document.getElementById('f-name').focus();
   });
 
-  var notif = { ocupado: false, erro: '' };
+  var notif = { ocupado: false, erro: '', pedeConvite: false };
   var MSG_NOTIF = {
     'nao-suportado': 'Este navegador não mostra notificações do app. No Chrome do Android, instale o app na tela inicial.',
     bloqueado: 'As notificações estão bloqueadas para este site. Libere nas configurações do navegador para ativar.',
@@ -324,7 +324,9 @@
     'servidor-cheio': 'O servidor está sem espaço agora e não aceita este aparelho. Tente de novo mais tarde.',
     'servidor-sem-push': 'O servidor não está com as notificações configuradas.',
     inscricao: 'Não consegui registrar este aparelho para as notificações. Tente de novo.',
-    servidor: 'O servidor não respondeu como esperado. Tente de novo mais tarde.'
+    servidor: 'O servidor não respondeu como esperado. Tente de novo mais tarde.',
+    convite: 'Este servidor pede um código de convite. Digite o código e toque de novo.',
+    'convite-invalido': 'Código de convite inválido.'
   };
   var ERRO_DESATIVAR = {
     rede: 'Sem conexão: não consegui apagar a cópia do servidor. Tente de novo com internet.',
@@ -340,6 +342,7 @@
     else texto.textContent = MSG_NOTIF[st];
     document.getElementById('a-notif-erro').textContent = semBotao ? '' : notif.erro;
     document.getElementById('a-notif-nota').hidden = semBotao;
+    document.getElementById('a-convite').hidden = semBotao || st === 'ativo' || !notif.pedeConvite;
     botao.hidden = semBotao;
     botao.disabled = notif.ocupado;
     botao.textContent = st === 'ativo' ? 'Desativar' : (notif.erro ? 'Tentar de novo' : 'Ativar notificações');
@@ -350,10 +353,16 @@
     var desativando = sync.status() === 'ativo';
     notif.ocupado = true; notif.erro = '';
     renderNotif();
-    (desativando ? sync.desativar() : sync.ativar(estado)).then(function (r) {
+    var campoConvite = document.getElementById('a-convite-campo');
+    var codigo = campoConvite.value.trim();
+    (desativando ? sync.desativar() : sync.ativar(estado, codigo || undefined)).then(function (r) {
       notif.ocupado = false;
       if (!r.ok) notif.erro = (desativando ? ERRO_DESATIVAR : ERRO_ATIVAR)[r.motivo] || ERRO_ATIVAR.servidor;
+      var pede = !r.ok && (r.motivo === 'convite' || r.motivo === 'convite-invalido');
+      if (r.ok) campoConvite.value = '';
+      notif.pedeConvite = pede; // o campo só aparece quando o servidor pede (e some ao ativar)
       renderNotif();
+      if (pede) campoConvite.focus();
     });
   });
   sync.ouvir(renderNotif);
@@ -368,6 +377,7 @@
     renderNotif();
     dialogo.showModal();
   });
+  dialogo.addEventListener('close', function () { document.getElementById('a-convite-campo').value = ''; });
   [dialogoNova, dialogo].forEach(function (d) {
     d.addEventListener('click', function (e) {
       if (e.target === d || e.target.closest('[data-fechar-dialogo]')) d.close();

@@ -30,7 +30,7 @@ function ambiente(opc = {}) {
     setTimeout: (f) => { timers.push(f); return timers.length; },
     clearTimeout: (id) => { timers[id - 1] = null; },
     fetch: (url, init) => {
-      chamadas.push([init.method, url, init.headers.Authorization || null, init.body ? JSON.parse(init.body) : null]);
+      chamadas.push([init.method, url, init.headers.Authorization || null, init.body ? JSON.parse(init.body) : null, init.headers['X-Convite'] || null]);
       if (!srv.rede) return Promise.reject(new TypeError('Failed to fetch'));
       const chave = init.method + ' ' + url.replace(/dispositivos\/[^/]+/, 'dispositivos/ID');
       let r = srv.respostas[chave];
@@ -284,4 +284,46 @@ test('ativar: servidor sem espaço vira o motivo servidor-cheio', async () => {
   assert.deepEqual(await S.criar(a.env).ativar(estado), { ok: false, motivo: 'servidor-cheio' });
   a = ambiente({ srv: { respostas: { 'PUT ./api/dispositivos/ID/estado': { status: 507 } } } });
   assert.deepEqual(await S.criar(a.env).ativar(estado), { ok: false, motivo: 'servidor-cheio' });
+});
+
+test('convite: vai só no cadastro e não é guardado em lugar nenhum', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  assert.deepEqual(await s.ativar(estado, 'meu-codigo-secreto'), { ok: true });
+  const comCodigo = a.chamadas.filter((c) => c[4]);
+  assert.deepEqual(comCodigo.map((c) => c[0] + ' ' + c[1]), ['POST ./api/dispositivos'], 'só o POST /dispositivos leva o código');
+  assert.equal(comCodigo[0][4], 'meu-codigo-secreto');
+  assert.ok(!JSON.stringify(a.guardado).includes('meu-codigo-secreto'), 'o código não vai para o localStorage');
+});
+
+test('convite: sem código o cabeçalho nem é enviado, e 403 pede o código', async () => {
+  const a = ambiente({ srv: { respostas: { 'POST ./api/dispositivos': { status: 403 } } } });
+  assert.deepEqual(await S.criar(a.env).ativar(estado), { ok: false, motivo: 'convite' });
+  assert.equal(a.chamadas.filter((c) => c[4]).length, 0);
+  assert.equal(a.guardado['contagem-de-dias:push'], undefined, 'nada foi guardado');
+});
+
+test('convite: 403 com código digitado vira convite-invalido', async () => {
+  const a = ambiente({ srv: { respostas: { 'POST ./api/dispositivos': { status: 403 } } } });
+  assert.deepEqual(await S.criar(a.env).ativar(estado, 'errado'), { ok: false, motivo: 'convite-invalido' });
+});
+
+test('convite: aparelho que já existe não pede nem manda código de novo', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado, 'codigo-1');
+  await s.desativar();
+  a.chamadas.length = 0;
+  await s.ativar(estado); // sem código: servidor aberto ou código não digitado
+  assert.equal(a.chamadas.filter((c) => c[4]).length, 0);
+});
+
+test('convite: se o aparelho foi apagado no servidor (401), o recadastro reusa o código digitado', async () => {
+  const a = ambiente();
+  let primeira = true;
+  a.srv.respostas['PUT ./api/dispositivos/ID/push'] = () => { if (primeira) { primeira = false; return { status: 401 }; } return { status: 204 }; };
+  assert.deepEqual(await S.criar(a.env).ativar(estado, 'codigo-x'), { ok: true });
+  const posts = a.chamadas.filter((c) => c[0] === 'POST' && c[1] === './api/dispositivos');
+  assert.equal(posts.length, 2);
+  assert.ok(posts.every((c) => c[4] === 'codigo-x'));
 });
