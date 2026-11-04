@@ -5,7 +5,7 @@ O que NÃO é de verdade: o Chromium headless não fala com o FCM, então só Pu
 uma inscrição falsa (chaves P-256 reais, endpoint de aparência FCM). O envio servidor -> serviço de push é coberto pelos testes
 Kotlin; aqui a entrega ao service worker usa o CDP (ServiceWorker.deliverPushMessage). Nenhum serviço de push real é contatado:
 o horário do resumo fica 12 h longe de agora, então o agendador nunca dispara."""
-import datetime, json, os, shutil, socket, sqlite3, subprocess, sys, tempfile, time, urllib.request
+import datetime, json, os, re, shutil, socket, sqlite3, subprocess, sys, tempfile, time, urllib.request
 from playwright.sync_api import sync_playwright
 
 RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
@@ -31,7 +31,7 @@ def foto(pg, nome):
 BOMBA = [None]  # o Playwright síncrono só processa eventos do CDP dentro de chamadas dele: sleep sozinho não basta
 
 
-def espera(cond, tempo=8.0, passo=0.1):
+def espera(cond, tempo=25.0, passo=0.1):
     fim = time.time() + tempo
     while time.time() < fim:
         v = cond()
@@ -125,6 +125,7 @@ INIT = r"""
 
 def novo_contexto(b, resposta=None):
     ctx = b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2)
+    ctx.set_default_timeout(90000)  # máquina lenta não pode reprovar o teste
     ctx.grant_permissions(['notifications'], origin=f'http://127.0.0.1:{PORTA}')  # o SW precisa para showNotification
     ctx.add_init_script(INIT)
     if resposta:
@@ -133,6 +134,10 @@ def novo_contexto(b, resposta=None):
 
 
 VIOLACOES_CSP = []
+
+
+def CODIGO_NAO_GUARDADO(pg, codigo):
+    return codigo not in pg.evaluate("JSON.stringify(Object.fromEntries(Object.entries(localStorage)))")
 
 
 def abrir(ctx):
@@ -386,43 +391,83 @@ try:
         espera(lambda: 'resumo por dia' in texto_notif(pg))
         ctx.close()
 
-        # =============== convite de cadastro ===============
+        # =============== convites individuais ===============
         derrubar()
-        CODIGO = 'convite-e2e-0123456789abcdef'
-        AMBIENTE['CONVITE'] = CODIGO
-        check(subir() is not None, 'servidor reiniciado com CONVITE')
+        ADMIN = 'admin-e2e-0123456789abcdefghij'
+        AMBIENTE['ADMIN'] = ADMIN
+        check(subir() is not None, 'servidor reiniciado com ADMIN')
         req = urllib.request.Request(BASE + 'api/dispositivos', method='POST')
         try:
             urllib.request.urlopen(req); status = 201
         except urllib.error.HTTPError as e:
             status = e.code
-        check(status == 403, 'sem o código, a API recusa o cadastro (403)')
+        check(status == 403, 'sem código, a API recusa o cadastro (403)')
         antes = len(dispositivos())
-        ctx = novo_contexto(b)
-        pg, erros = abrir(ctx)
-        ajustes(pg)
-        pg.fill('#a-hora', hora_longe()); pg.dispatch_event('#a-hora', 'change')
-        check(pg.locator('#a-convite').is_hidden(), 'o campo de convite fica escondido até o servidor pedir')
-        pg.click('#a-notif-botao')
-        check(espera(lambda: 'código de convite' in pg.locator('#a-notif-erro').inner_text()), 'servidor com convite: o app explica que pede o código')
-        check(pg.locator('#a-convite').is_visible() and pg.evaluate("document.activeElement.id") == 'a-convite-campo', 'o campo aparece e recebe o foco')
-        check(pg.get_attribute('#a-convite-campo', 'type') == 'password' and pg.get_attribute('#a-convite-campo', 'autocomplete') == 'off', 'o campo é de senha e sem autocompletar')
+
+        def ativar_com(pg, codigo=None):
+            ajustes(pg)
+            pg.fill('#a-hora', hora_longe()); pg.dispatch_event('#a-hora', 'change')
+            pg.click('#a-notif-botao')
+            if codigo is None:
+                return
+            check(espera(lambda: 'código de convite' in pg.locator('#a-notif-erro').inner_text()), 'servidor com convites: o app explica que pede o código')
+            pg.fill('#a-convite-campo', codigo)
+            pg.click('#a-notif-botao')
+
+        # --- administrador
+        ctxA = novo_contexto(b)
+        pgA, errosA = abrir(ctxA)
+        ativar_com(pgA)
+        check(espera(lambda: 'código de convite' in pgA.locator('#a-notif-erro').inner_text()), 'sem código: o app explica que o servidor pede convite')
+        check(pgA.locator('#a-convite').is_visible() and pgA.evaluate("document.activeElement.id") == 'a-convite-campo', 'o campo de código aparece e recebe o foco')
+        check(pgA.get_attribute('#a-convite-campo', 'type') == 'password' and pgA.get_attribute('#a-convite-campo', 'autocomplete') == 'off', 'o campo é de senha e sem autocompletar')
         check(len(dispositivos()) == antes, 'nada foi cadastrado sem o código')
-        foto(pg, '26-convite-pedido')
-        pg.fill('#a-convite-campo', 'codigo-errado-0123456789')
-        pg.click('#a-notif-botao')
-        check(espera(lambda: 'inválido' in pg.locator('#a-notif-erro').inner_text()), 'código errado: mensagem de código inválido')
-        check(pg.locator('#a-convite').is_visible() and len(dispositivos()) == antes, 'código errado: campo continua e nada é cadastrado')
-        pg.fill('#a-convite-campo', CODIGO)
-        pg.click('#a-notif-botao')
-        check(espera(lambda: texto_notif(pg).startswith('Ativas.')), 'código certo: notificações ativas')
-        check(len(dispositivos()) == antes + 1, 'código certo: aparelho cadastrado')
-        check(pg.locator('#a-convite').is_hidden() and pg.input_value('#a-convite-campo') == '', 'depois de ativar o campo some e é limpo')
-        guardado = pg.evaluate("JSON.stringify(Object.fromEntries(Object.entries(localStorage)))")
-        check(CODIGO not in guardado, 'o código de convite não fica guardado no aparelho')
-        check(not erros, f'convite sem erros de JavaScript {erros}')
-        foto(pg, '27-convite-ativo')
-        ctx.close()
+        foto(pgA, '26-convite-pedido')
+        pgA.fill('#a-convite-campo', 'codigo-errado-0123456789')
+        pgA.click('#a-notif-botao')
+        check(espera(lambda: 'inválido' in pgA.locator('#a-notif-erro').inner_text()), 'código errado: mensagem de código inválido')
+        pgA.fill('#a-convite-campo', ADMIN)
+        pgA.click('#a-notif-botao')
+        check(espera(lambda: texto_notif(pgA).startswith('Ativas.')), 'chave de administrador: notificações ativas')
+        check(linhas('SELECT admin FROM dispositivos ORDER BY criado_em DESC LIMIT 1')[0][0] == 1, 'o aparelho foi cadastrado como administrador')
+        check(espera(lambda: pgA.locator('#a-convites').is_visible()), 'o painel de convites aparece para o administrador')
+        check(pgA.locator('#a-convite').is_hidden() and pgA.input_value('#a-convite-campo') == '', 'depois de ativar o campo de código some e é limpo')
+        pgA.fill('#a-convite-nome', 'Maria')
+        pgA.click('#a-convite-gerar')
+        check(espera(lambda: pgA.locator('#a-convite-novo').is_visible()), 'gerar convite mostra o código')
+        codigo = pgA.locator('#a-convite-codigo').inner_text()
+        check(re.fullmatch(r'([A-HJ-NP-Z2-9]{4}-){4}[A-HJ-NP-Z2-9]{4}', codigo) is not None, f'código no formato esperado ({codigo})')
+        check(pgA.locator('#a-convites-lista li', has_text='Maria').count() == 1 and 'Pendente' in pgA.locator('#a-convites-lista').inner_text(), 'a lista mostra o convite pendente')
+        guardado = pgA.evaluate("JSON.stringify(Object.fromEntries(Object.entries(localStorage)))")
+        check(codigo not in guardado and ADMIN not in guardado, 'nem o código gerado nem a chave de administrador ficam guardados')
+        foto(pgA, '27-convite-gerado')
+
+        # --- convidada: usa o código uma vez
+        ctxB = novo_contexto(b)
+        pgB, errosB = abrir(ctxB)
+        ativar_com(pgB, codigo.lower().replace('-', ' '))
+        check(espera(lambda: texto_notif(pgB).startswith('Ativas.')), 'convidada: o código (em minúsculas, com espaços) ativa as notificações')
+        check(linhas('SELECT admin FROM dispositivos ORDER BY criado_em DESC LIMIT 1')[0][0] == 0, 'o aparelho convidado não é administrador')
+        pgB.wait_for_timeout(600)
+        check(pgB.locator('#a-convites').is_hidden(), 'aparelho comum não vê o painel de convites')
+        check(CODIGO_NAO_GUARDADO(pgB, codigo), 'o código usado não fica guardado no aparelho convidado')
+        ctxB.close()
+
+        # --- o mesmo código não vale duas vezes
+        ctxC = novo_contexto(b)
+        pgC, errosC = abrir(ctxC)
+        ativar_com(pgC, codigo)
+        check(espera(lambda: 'inválido' in pgC.locator('#a-notif-erro').inner_text()), 'código já usado: convite inválido')
+        check(len(dispositivos()) == antes + 2, 'código já usado não cadastra de novo')
+        ctxC.close()
+
+        # --- administrador remove o aparelho que usou o convite
+        pgA.keyboard.press('Escape'); ajustes(pgA)
+        check(espera(lambda: 'Usado' in pgA.locator('#a-convites-lista').inner_text()), 'a lista passa a mostrar o convite como usado')
+        pgA.click('#a-convites-lista button'); pgA.click('#a-convites-lista button')
+        check(espera(lambda: len(dispositivos()) == antes + 1), 'dois toques em "Remover aparelho" apagam o aparelho convidado')
+        check(not errosA and not errosB and not errosC, f'convites sem erros de JavaScript {errosA + errosB + errosC}')
+        ctxA.close()
         b.close()
     check(not linhas('SELECT 1 FROM dispositivos WHERE push_endpoint IS NOT NULL AND ultimo_envio IS NOT NULL'), 'o servidor nunca tentou enviar um aviso durante o teste')
 finally:

@@ -327,3 +327,65 @@ test('convite: se o aparelho foi apagado no servidor (401), o recadastro reusa o
   assert.equal(posts.length, 2);
   assert.ok(posts.every((c) => c[4] === 'codigo-x'));
 });
+
+test('convites: sem aparelho ativo não chama o servidor', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  assert.deepEqual(await s.convites(), { ok: false, motivo: 'inativo' });
+  assert.deepEqual(await s.criarConvite('Ana'), { ok: false, motivo: 'inativo' });
+  assert.deepEqual(await s.revogarConvite('x'), { ok: false, motivo: 'inativo' });
+  assert.equal(a.chamadas.length, 0);
+});
+
+test('convites: aparelho comum recebe 403 e não é administrador', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  a.srv.respostas['GET ./api/dispositivos/ID/convites'] = { status: 403, corpo: { erro: 'Sem permissão.' } };
+  assert.deepEqual(await s.convites(), { ok: true, admin: false });
+});
+
+test('convites: administrador lista, cria e revoga, com o segredo do aparelho e sem guardar o código', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  const lista = [{ id: 'k1', nome: 'Ana', estado: 'pendente', criadoEm: 1, expiraEm: 2 }];
+  a.srv.respostas['GET ./api/dispositivos/ID/convites'] = { status: 200, corpo: lista };
+  a.srv.respostas['POST ./api/dispositivos/ID/convites'] = { status: 201, corpo: { id: 'k2', codigo: 'ABCD-EFGH-JKLM-NPQR-STUV', expiraEm: 9 } };
+  a.srv.respostas['DELETE ./api/dispositivos/ID/convites/k1'] = { status: 204 };
+  assert.deepEqual(await s.convites(), { ok: true, admin: true, lista });
+  const criado = await s.criarConvite('Bia');
+  assert.equal(criado.ok, true); assert.equal(criado.convite.codigo, 'ABCD-EFGH-JKLM-NPQR-STUV');
+  assert.deepEqual(await s.revogarConvite('k1'), { ok: true });
+  const chamadasConvites = a.chamadas.filter((c) => /convites/.test(c[1]));
+  assert.equal(chamadasConvites.length, 3);
+  assert.ok(chamadasConvites.every((c) => c[2] === 'Bearer s3gr3d0'), 'todas autenticadas pelo segredo do aparelho');
+  assert.deepEqual(chamadasConvites[1][3], { nome: 'Bia' });
+  assert.ok(!JSON.stringify(a.guardado).includes('ABCD-EFGH'), 'o código gerado não vai para o localStorage');
+});
+
+test('convites: erros do servidor viram motivos claros', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  const r = a.srv.respostas;
+  r['POST ./api/dispositivos/ID/convites'] = { status: 409 };
+  assert.deepEqual(await s.criarConvite('x'), { ok: false, motivo: 'pendentes' });
+  r['POST ./api/dispositivos/ID/convites'] = { status: 400 };
+  assert.deepEqual(await s.criarConvite(''), { ok: false, motivo: 'nome' });
+  r['POST ./api/dispositivos/ID/convites'] = { status: 429 };
+  assert.deepEqual(await s.criarConvite('x'), { ok: false, motivo: 'limite' });
+  r['GET ./api/dispositivos/ID/convites'] = { status: 500 };
+  assert.deepEqual(await s.convites(), { ok: false, motivo: 'servidor' });
+  a.srv.rede = false;
+  assert.deepEqual(await s.convites(), { ok: false, motivo: 'rede' });
+});
+
+test('convites: 401 significa aparelho apagado no servidor e o app esquece a credencial', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  a.srv.respostas['GET ./api/dispositivos/ID/convites'] = { status: 401 };
+  assert.deepEqual(await s.convites(), { ok: false, motivo: 'inativo' });
+  assert.equal(s.temDispositivo(), false);
+});

@@ -362,10 +362,104 @@
       if (r.ok) campoConvite.value = '';
       notif.pedeConvite = pede; // o campo só aparece quando o servidor pede (e some ao ativar)
       renderNotif();
+      atualizarConvites();
       if (pede) campoConvite.focus();
     });
   });
   sync.ouvir(renderNotif);
+
+  /* ---------- convites (só aparece no aparelho administrador) ---------- */
+  var painelConvites = document.getElementById('a-convites');
+  var ERRO_CONVITE = {
+    pendentes: 'Já há 10 convites pendentes. Revogue algum ou espere vencer.',
+    nome: 'Escreva o nome de quem vai receber (até 40 letras).',
+    limite: 'Muitos convites seguidos. Tente de novo mais tarde.',
+    rede: 'Sem conexão com o servidor agora.',
+    servidor: 'O servidor não respondeu como esperado.',
+    inativo: 'Ative as notificações neste aparelho para gerenciar convites.'
+  };
+  var codigoAtual = '';
+  var fmtDia = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short' });
+  function esconderCodigo() {
+    codigoAtual = '';
+    document.getElementById('a-convite-codigo').textContent = '';
+    document.getElementById('a-convite-novo').hidden = true;
+  }
+  function textoConvite(c) {
+    if (c.estado === 'pendente') return 'Pendente, vence ' + fmtDia.format(new Date(c.expiraEm));
+    if (c.estado === 'usado') return 'Usado em ' + fmtDia.format(new Date(c.usadoEm));
+    if (c.estado === 'expirado') return 'Expirado';
+    return 'Revogado';
+  }
+  function desenharConvites(lista) {
+    var ul = document.getElementById('a-convites-lista');
+    ul.textContent = '';
+    lista.forEach(function (c) {
+      var li = document.createElement('li');
+      var info = document.createElement('span'); info.className = 'info';
+      var nome = document.createElement('span'); nome.textContent = c.nome;
+      var estado = document.createElement('span'); estado.className = 'quando'; estado.textContent = textoConvite(c);
+      info.appendChild(nome); info.appendChild(estado); li.appendChild(info);
+      if (c.estado === 'pendente' || c.estado === 'usado') {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn small danger';
+        var rotulo = c.estado === 'usado' ? 'Remover aparelho' : 'Revogar';
+        b.textContent = rotulo;
+        var armado = null;
+        b.addEventListener('click', function () {
+          if (!armado) { // segundo toque confirma, sem janela de confirmação
+            b.textContent = 'Confirmar?';
+            armado = setTimeout(function () { armado = null; b.textContent = rotulo; }, 4000);
+            return;
+          }
+          clearTimeout(armado); b.disabled = true;
+          sync.revogarConvite(c.id).then(function (r) {
+            if (!r.ok) document.getElementById('a-convites-erro').textContent = ERRO_CONVITE[r.motivo] || ERRO_CONVITE.servidor;
+            atualizarConvites();
+          });
+        });
+        li.appendChild(b);
+      }
+      ul.appendChild(li);
+    });
+  }
+  /* Pergunta ao servidor se este aparelho é administrador; o painel só aparece se for. */
+  function atualizarConvites() {
+    if (sync.status() !== 'ativo') { painelConvites.hidden = true; esconderCodigo(); return Promise.resolve(); }
+    return sync.convites().then(function (r) {
+      painelConvites.hidden = !(r.ok && r.admin);
+      if (r.ok && r.admin) desenharConvites(r.lista); else esconderCodigo();
+    });
+  }
+  document.getElementById('a-convite-gerar').addEventListener('click', function () {
+    var campo = document.getElementById('a-convite-nome');
+    var erro = document.getElementById('a-convites-erro');
+    var botao = document.getElementById('a-convite-gerar');
+    erro.textContent = '';
+    botao.disabled = true;
+    sync.criarConvite(campo.value.trim()).then(function (r) {
+      botao.disabled = false;
+      if (!r.ok) { erro.textContent = ERRO_CONVITE[r.motivo] || ERRO_CONVITE.servidor; return; }
+      campo.value = '';
+      codigoAtual = r.convite.codigo; // só na memória desta tela: fecha os Ajustes e some
+      document.getElementById('a-convite-codigo').textContent = codigoAtual;
+      document.getElementById('a-convite-novo').hidden = false;
+      atualizarConvites();
+    });
+  });
+  function mensagemConvite() {
+    var url = location.origin + location.pathname.replace(/[^\/]*$/, '');
+    return 'Convite para o Contador de Dias: ' + codigoAtual + '\nVale 7 dias e só pode ser usado uma vez.\nAbra ' + url +
+      ', toque na engrenagem (Ajustes), em "Ativar notificações" e digite o código.';
+  }
+  document.getElementById('a-convite-compartilhar').addEventListener('click', function () {
+    if (!codigoAtual) return;
+    if (navigator.share) { navigator.share({ title: 'Convite para o Contador de Dias', text: mensagemConvite() }).catch(function () {}); return; }
+    if (navigator.clipboard) navigator.clipboard.writeText(mensagemConvite()).catch(function () {});
+  });
+  document.getElementById('a-convite-copiar').addEventListener('click', function () {
+    if (codigoAtual && navigator.clipboard) navigator.clipboard.writeText(codigoAtual).catch(function () {});
+  });
 
   var dialogo = document.getElementById('ajustes');
   document.getElementById('toggle-ajustes').addEventListener('click', function () {
@@ -375,9 +469,10 @@
     document.getElementById('a-fuso').textContent = 'Fuso do aparelho: ' + estado.preferencias.fuso + '.';
     notif.erro = '';
     renderNotif();
+    atualizarConvites();
     dialogo.showModal();
   });
-  dialogo.addEventListener('close', function () { document.getElementById('a-convite-campo').value = ''; });
+  dialogo.addEventListener('close', function () { document.getElementById('a-convite-campo').value = ''; esconderCodigo(); document.getElementById('a-convites-erro').textContent = ''; });
   [dialogoNova, dialogo].forEach(function (d) {
     d.addEventListener('click', function (e) {
       if (e.target === d || e.target.closest('[data-fechar-dialogo]')) d.close();

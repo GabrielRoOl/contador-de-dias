@@ -98,7 +98,7 @@ private fun cabecalhosPadrao(csp: PoliticaCsp) = createApplicationPlugin("Cabeca
         call.response.header("Referrer-Policy", "no-referrer")
         call.response.header("X-Frame-Options", "DENY")
         call.response.header("Content-Security-Policy", csp.valor())
-        call.response.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()")
+        call.response.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
         call.response.header("Cross-Origin-Opener-Policy", "same-origin")
         call.response.header("Cross-Origin-Resource-Policy", "same-origin")
         val api = call.request.path().startsWith("$PREFIXO/api")

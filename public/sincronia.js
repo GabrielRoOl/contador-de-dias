@@ -269,7 +269,40 @@
       }).catch(function () { /* sem rede agora: confere na próxima abertura */ });
     }
 
+    /* ---------- convites (só o aparelho administrador) ---------- */
+    function motivoDe(resp) { return resp.status === 429 ? 'limite' : 'servidor'; }
+    function comoAdministrador(metodo, sufixo, corpo, tratar) {
+      if (!cred || !cred.ativo) return Promise.resolve({ ok: false, motivo: 'inativo' });
+      return pedir(metodo, caminhoDispositivo(sufixo), corpo, { auth: true }).then(function (resp) {
+        if (resp.status === 401) { esquecer(); return { ok: false, motivo: 'inativo' }; }
+        return tratar(resp);
+      }, function () { return { ok: false, motivo: 'rede' }; });
+    }
+    /* {ok:true, admin:false} para aparelho comum (403); {ok:true, admin:true, lista:[...]} para o administrador. */
+    function convites() {
+      return comoAdministrador('GET', '/convites', undefined, function (resp) {
+        if (resp.status === 403) return { ok: true, admin: false };
+        if (resp.status !== 200 || !Array.isArray(resp.json)) return { ok: false, motivo: motivoDe(resp) };
+        return { ok: true, admin: true, lista: resp.json };
+      });
+    }
+    /* Devolve {ok:true, convite:{id, codigo, expiraEm}}. O código só existe nesta resposta: não é guardado. */
+    function criarConvite(nome) {
+      return comoAdministrador('POST', '/convites', { nome: nome }, function (resp) {
+        if (resp.status === 201 && resp.json && resp.json.codigo) return { ok: true, convite: resp.json };
+        if (resp.status === 409) return { ok: false, motivo: 'pendentes' };
+        if (resp.status === 400) return { ok: false, motivo: 'nome' };
+        return { ok: false, motivo: motivoDe(resp) };
+      });
+    }
+    function revogarConvite(id) {
+      return comoAdministrador('DELETE', '/convites/' + encodeURIComponent(id), undefined, function (resp) {
+        return resp.status === 204 || resp.status === 404 ? { ok: true } : { ok: false, motivo: motivoDe(resp) };
+      });
+    }
+
     return {
+      convites: convites, criarConvite: criarConvite, revogarConvite: revogarConvite,
       status: status, ativar: ativar, desativar: desativar, agendar: agendar, retomar: retomar,
       descarregar: descarregar, verificar: verificar,
       ouvir: function (f) { ouvintes.push(f); },
