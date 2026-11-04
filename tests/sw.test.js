@@ -89,6 +89,22 @@ test('clique foca o app que já está aberto', async () => {
   assert.deepEqual(r.abertas, []);
 });
 
+test('clique em aviso com tela própria (#pomodoro) leva o app aberto até ela, sem recarregar', async () => {
+  const navegou = [];
+  const janela = { url: SCOPE + 'index.html', focus: () => Promise.resolve(), navigate: (u) => { navegou.push(u); return Promise.resolve(); } };
+  await clicar([janela], SCOPE + '#pomodoro');
+  assert.deepEqual(navegou, [SCOPE + '#pomodoro']);
+  navegou.length = 0;
+  await clicar([{ ...janela, url: SCOPE + '#pomodoro' }], SCOPE + '#pomodoro');
+  assert.deepEqual(navegou, [], 'já está lá');
+  await clicar([janela], SCOPE);
+  assert.deepEqual(navegou, [], 'o resumo diário (sem âncora) não navega a janela aberta');
+  const semNavegar = { url: SCOPE, focus: () => Promise.resolve() };
+  await clicar([semNavegar], SCOPE + '#pomodoro'); // navegador sem WindowClient.navigate: só foca
+  const quebrada = { url: SCOPE, focus: () => Promise.resolve(), navigate: () => Promise.reject(new Error('x')) };
+  await clicar([quebrada], SCOPE + '#pomodoro'); // navegação recusada não derruba o clique
+});
+
 test('clique abre o app quando ele está fechado', async () => {
   const r = await clicar([{ url: 'https://outro.example/', focus: () => { throw new Error('não deveria'); } }]);
   assert.deepEqual(r.abertas, [SCOPE]);

@@ -10,6 +10,7 @@
   var ESPERA_ENVIO_MS = 2000;
   var LIMITE_REDE_MS = 10000;
   var LIMITE_SW_MS = 8000;
+  var ESPERA_ALARME_MS = 30000; // depois de uma falha, o mesmo alarme só é tentado de novo após isto
   var LIMITE_KEEPALIVE = 60000; // o navegador recusa corpos maiores que ~64 KB com keepalive
 
   /* ---------- helpers puros ---------- */
@@ -269,6 +270,43 @@
       }).catch(function () { /* sem rede agora: confere na próxima abertura */ });
     }
 
+    /* ---------- alarme do Pomodoro ---------- */
+    /* O servidor avisa o fim da fase quando o app está fechado. `desejado` é null (sem alarme) ou {em, fase, proxima};
+       pode ser chamado a cada segundo: só vai à rede se for diferente do que o servidor já tem. Sem rede, repete depois. */
+    var alarmeVoando = false;
+    var alarmeDesejo = null;
+    var alarmeFalha = null; // {chave, ate}: o mesmo pedido que falhou espera um pouco antes de tentar de novo
+    function mesmoAlarme(a, b) {
+      if (!a || !b) return !a && !b;
+      return a.em === b.em && a.fase === b.fase && a.proxima === b.proxima;
+    }
+    function chaveAlarme(a) { return a ? a.em + a.fase + a.proxima : 'nenhum'; }
+    function agora() { return amb.agora ? amb.agora() : Date.now(); }
+    function alarme(desejado) {
+      alarmeDesejo = desejado ? { em: desejado.em, fase: desejado.fase, proxima: desejado.proxima } : null;
+      return alarmeVoando ? Promise.resolve() : conciliarAlarme();
+    }
+    function conciliarAlarme() {
+      if (!cred || !cred.ativo) return Promise.resolve();
+      var d = alarmeDesejo;
+      if (mesmoAlarme(d, cred.alarme || null)) return Promise.resolve();
+      if (alarmeFalha && alarmeFalha.chave === chaveAlarme(d) && agora() < alarmeFalha.ate) return Promise.resolve();
+      alarmeVoando = true;
+      var req = d ? pedir('PUT', caminhoDispositivo('/alarme'), d, { auth: true }) : pedir('DELETE', caminhoDispositivo('/alarme'), undefined, { auth: true });
+      return req.then(function (resp) {
+        if (resp.status === 401) { esquecer(); return false; }
+        if (resp.status !== 204 || !cred) return false;
+        if (d) cred.alarme = d; else delete cred.alarme;
+        gravar();
+        return true;
+      }, function () { return false; }).then(function (ok) {
+        alarmeVoando = false;
+        if (!ok) alarmeFalha = { chave: chaveAlarme(d), ate: agora() + ESPERA_ALARME_MS };
+        // o app pediu outra coisa enquanto este pedido estava no ar
+        if (!mesmoAlarme(alarmeDesejo, d)) return conciliarAlarme();
+      });
+    }
+
     /* ---------- convites (só o aparelho administrador) ---------- */
     function motivoDe(resp) { return resp.status === 429 ? 'limite' : 'servidor'; }
     function comoAdministrador(metodo, sufixo, corpo, tratar) {
@@ -303,7 +341,7 @@
 
     return {
       convites: convites, criarConvite: criarConvite, revogarConvite: revogarConvite,
-      status: status, ativar: ativar, desativar: desativar, agendar: agendar, retomar: retomar,
+      status: status, ativar: ativar, desativar: desativar, agendar: agendar, retomar: retomar, alarme: alarme,
       descarregar: descarregar, verificar: verificar,
       ouvir: function (f) { ouvintes.push(f); },
       temDispositivo: function () { return !!cred; }

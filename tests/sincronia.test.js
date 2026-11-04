@@ -389,3 +389,107 @@ test('convites: 401 significa aparelho apagado no servidor e o app esquece a cre
   assert.deepEqual(await s.convites(), { ok: false, motivo: 'inativo' });
   assert.equal(s.temDispositivo(), false);
 });
+
+/* ---------- alarme do Pomodoro ---------- */
+const chamadasAlarme = (a) => a.chamadas.filter((c) => typeof c[1] === 'string' && c[1].endsWith('/alarme'));
+const alarmeX = { em: 1762001500000, fase: 'foco', proxima: 'pausa' };
+
+test('alarme: sem dispositivo ativo não vai à rede', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.alarme(alarmeX);
+  assert.equal(chamadasAlarme(a).length, 0);
+});
+
+test('alarme: envia uma vez, guarda o que o servidor tem e não repete a cada chamada', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  for (let i = 0; i < 5; i++) await s.alarme(alarmeX);
+  const [put, ...resto] = chamadasAlarme(a);
+  assert.equal(resto.length, 0);
+  assert.equal(put[0], 'PUT'); assert.equal(put[2], 'Bearer s3gr3d0');
+  assert.deepEqual(put[3], alarmeX);
+  assert.deepEqual(JSON.parse(a.guardado['contagem-de-dias:push']).alarme, alarmeX);
+});
+
+test('alarme: trocar o horário substitui; null cancela só se havia, uma vez', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  await s.alarme(null);
+  assert.equal(chamadasAlarme(a).length, 0, 'nada para cancelar');
+  await s.alarme(alarmeX);
+  await s.alarme({ ...alarmeX, em: alarmeX.em + 5000 });
+  await s.alarme(null); await s.alarme(null);
+  assert.deepEqual(chamadasAlarme(a).map((c) => c[0]), ['PUT', 'PUT', 'DELETE']);
+  assert.equal(JSON.parse(a.guardado['contagem-de-dias:push']).alarme, undefined);
+});
+
+test('alarme: falha espera 30 s para o mesmo pedido, mas um pedido novo vai na hora', async () => {
+  let t = 1000;
+  const a = ambiente();
+  a.env.agora = () => t;
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  a.srv.respostas['PUT ./api/dispositivos/ID/alarme'] = { status: 429 };
+  await s.alarme(alarmeX);
+  await s.alarme(alarmeX); t += 29000; await s.alarme(alarmeX);
+  assert.equal(chamadasAlarme(a).length, 1, 'não insiste a cada segundo');
+  assert.equal(JSON.parse(a.guardado['contagem-de-dias:push']).alarme, undefined, 'não conta como enviado');
+  await s.alarme({ ...alarmeX, em: alarmeX.em + 1 });
+  assert.equal(chamadasAlarme(a).length, 2, 'pedido diferente tenta já');
+  t += 31000;
+  a.srv.respostas['PUT ./api/dispositivos/ID/alarme'] = { status: 204 };
+  await s.alarme({ ...alarmeX, em: alarmeX.em + 1 });
+  assert.equal(chamadasAlarme(a).length, 3, 'passou a espera: tenta e consegue');
+  assert.equal(JSON.parse(a.guardado['contagem-de-dias:push']).alarme.em, alarmeX.em + 1);
+});
+
+test('alarme: sem rede o cancelamento fica pendente e vai quando a rede volta', async () => {
+  let t = 1000;
+  const a = ambiente();
+  a.env.agora = () => t;
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  await s.alarme(alarmeX);
+  a.srv.rede = false;
+  await s.alarme(null);
+  assert.deepEqual(JSON.parse(a.guardado['contagem-de-dias:push']).alarme, alarmeX, 'o servidor ainda tem o alarme');
+  a.srv.rede = true; t += 31000;
+  await s.alarme(null);
+  assert.equal(JSON.parse(a.guardado['contagem-de-dias:push']).alarme, undefined);
+  assert.deepEqual(chamadasAlarme(a).map((c) => c[0]), ['PUT', 'DELETE', 'DELETE']);
+});
+
+test('alarme: o que mudou durante o pedido em andamento é enviado em seguida, só o último', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  const p1 = s.alarme(alarmeX);
+  const p2 = s.alarme({ ...alarmeX, em: alarmeX.em + 1 });
+  const p3 = s.alarme(null);
+  await Promise.all([p1, p2, p3]);
+  assert.deepEqual(chamadasAlarme(a).map((c) => c[0]), ['PUT', 'DELETE']);
+  assert.equal(JSON.parse(a.guardado['contagem-de-dias:push']).alarme, undefined);
+});
+
+test('alarme: 401 significa aparelho apagado no servidor e o app esquece a credencial', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  a.srv.respostas['PUT ./api/dispositivos/ID/alarme'] = { status: 401 };
+  await s.alarme(alarmeX);
+  assert.equal(s.temDispositivo(), false);
+});
+
+test('alarme: desativar as notificações apaga o dispositivo e a lembrança do alarme', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  await s.alarme(alarmeX);
+  await s.desativar();
+  assert.equal(a.guardado['contagem-de-dias:push'], undefined);
+  await s.alarme(alarmeX);
+  assert.equal(chamadasAlarme(a).length, 1, 'sem dispositivo, nada vai à rede');
+});

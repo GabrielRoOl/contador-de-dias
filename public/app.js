@@ -675,13 +675,15 @@
   function pomoAgendar() {
     if (pomoFim) { clearTimeout(pomoFim); pomoFim = null; }
     if (pomo.rodando) pomoFim = setTimeout(pomoVerificar, Math.max(0, pomo.fimEm - Date.now()) + 30);
+    // com o app fechado quem avisa é o servidor; ao pausar, pular, parar ou concluir o alarme é cancelado
+    sync.alarme(pomo.rodando ? { em: pomo.fimEm, fase: pomo.fase, proxima: PM.pular(pomo).fase } : null);
   }
 
   var elPomo = {
     fase: document.getElementById('pomo-fase'), tempo: document.getElementById('pomo-tempo'), arco: document.getElementById('pomo-arco'),
     ciclo: document.getElementById('pomo-ciclo'), msg: document.getElementById('pomo-msg'), principal: document.getElementById('pomo-principal'),
     pular: document.getElementById('pomo-pular'), parar: document.getElementById('pomo-parar'), vinculo: document.getElementById('pomo-vinculo'),
-    hoje: document.getElementById('pomo-hoje')
+    hoje: document.getElementById('pomo-hoje'), aviso: document.getElementById('pomo-aviso')
   };
   var telaPomo = document.getElementById('tela-pomodoro');
   var telaContagens = document.getElementById('tela-contagens');
@@ -723,9 +725,13 @@
     elPomo.msg.textContent = pomoUi.armado ? 'Parar cancela esta sessão e ela não conta.' : (pomoUi.msg || (st === 'pausado' ? 'Pausado. Continue quando quiser.' : ''));
     var n = PM.pomodorosDoDia(pomo, PM.dataLocal(Date.now()));
     elPomo.hoje.textContent = n === 0 ? 'Nenhum pomodoro hoje ainda.' : 'Hoje: ' + n + ' ' + plural(n, 'pomodoro', 'pomodoros') + '.';
+    elPomo.aviso.hidden = sync.status() !== 'desligado';
     pomoOpcoesVinculo();
     pomoRelogio();
   }
+
+  // ativar ou desativar as notificações muda se o servidor pode avisar: concilia o alarme e a dica da tela
+  sync.ouvir(function () { pomoAgendar(); pomoRender(); });
 
   var armadoTimer = null;
   function desarmarParar() { pomoUi.armado = false; if (armadoTimer) { clearTimeout(armadoTimer); armadoTimer = null; } }
@@ -798,7 +804,7 @@
     if (document.hidden) sync.descarregar();
     else { tick(); sync.retomar(estado); document.title = tituloOriginal; pomoVerificar(); }
   });
-  window.addEventListener('online', function () { sync.retomar(estado); });
+  window.addEventListener('online', function () { sync.retomar(estado); pomoAgendar(); });
   sync.retomar(estado);
   sync.verificar();
 

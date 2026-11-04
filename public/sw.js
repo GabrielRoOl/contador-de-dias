@@ -1,5 +1,5 @@
 // Mude o número da versão sempre que alterar algum arquivo do app.
-const CACHE = 'contagem-de-dias-v24';
+const CACHE = 'contagem-de-dias-v25';
 const ARQUIVOS = [
   './', './index.html', './app.css', './logica.js', './textos.js', './sincronia.js', './pomodoro.js', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './icon-badge.png',
@@ -109,6 +109,11 @@ self.addEventListener('notificationclick', (e) => {
   e.waitUntil((async () => {
     const janelas = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     const aberta = janelas.find((j) => j.url.indexOf(self.registration.scope) === 0);
-    return aberta ? aberta.focus() : clients.openWindow(url);
+    if (!aberta) return clients.openWindow(url);
+    await aberta.focus();
+    // Atalho para uma tela do app (./#pomodoro) leva até ela mesmo com o app aberto; mudar só a âncora não recarrega a página.
+    if (new URL(url).hash && aberta.url !== url && typeof aberta.navigate === 'function') {
+      try { await aberta.navigate(url); } catch (erro) { /* fica onde está */ }
+    }
   })());
 });

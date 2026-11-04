@@ -253,6 +253,47 @@ try:
         check(len(dispositivos()) == 1, 'reabrir não cria outro dispositivo')
         pg.keyboard.press('Escape')
 
+        # --- Pomodoro: o alarme no servidor acompanha o relógio do app
+        def alarme():
+            r = linhas('SELECT alarme_em, alarme_fase, alarme_proxima FROM dispositivos')
+            return r[0] if r and r[0][0] is not None else None
+
+        def fim_local():
+            return json.loads(pg.evaluate("localStorage.getItem('contagem-de-dias:pomodoro')"))['fimEm']
+
+        pg.evaluate("location.hash = '#pomodoro'")
+        pg.wait_for_selector('#tela-pomodoro:not([hidden])')
+        check(alarme() is None and pg.locator('#pomo-aviso').is_hidden(), 'Pomodoro parado: sem alarme no servidor e sem a dica de ativar notificações')
+        pg.click('#pomo-principal')
+        check(espera(alarme), 'iniciar o foco cria o alarme no servidor')
+        a = alarme()
+        check(a[0] == fim_local() and a[1:] == ('foco', 'pausa'), f'o alarme coincide com o fim do foco ({a})')
+        check(abs(a[0] - time.time() * 1000 - 25 * 60000) < 15000, 'o alarme está a ~25 minutos')
+        check(json.loads(pg.evaluate("localStorage.getItem('contagem-de-dias:push')")).get('alarme', {}).get('em') == a[0], 'o app lembra o que o servidor tem')
+        pg.click('#pomo-principal')  # Pausar
+        check(espera(lambda: alarme() is None), 'pausar cancela o alarme')
+        time.sleep(1.2)
+        pg.click('#pomo-principal')  # Continuar
+        check(espera(alarme) and alarme()[0] == fim_local(), 'continuar cria o alarme de novo, no novo fim')
+        pg.click('#pomo-pular')
+        check(espera(lambda: alarme() is None), 'pular cancela o alarme')
+        pg.click('#pomo-principal')
+        check(espera(alarme) and alarme()[1:] == ('pausa', 'foco'), 'a pausa agenda o alarme da pausa, que leva ao foco')
+        pg.reload(); pg.wait_for_selector('#tela-pomodoro:not([hidden])')
+        pg.evaluate('navigator.serviceWorker.ready')
+        time.sleep(1.5)
+        check(alarme() is not None and alarme()[0] == fim_local(), 'recarregar com a sessão rodando mantém o mesmo alarme')
+        pg.click('#pomo-parar'); pg.click('#pomo-parar')
+        check(espera(lambda: alarme() is None), 'parar (com a confirmação) cancela o alarme')
+        pg.click('#pomo-principal')
+        espera(alarme)
+        pg.evaluate("location.hash = ''")
+        check(alarme() is not None, 'sair da tela do Pomodoro não cancela o alarme')
+        pg.evaluate("location.hash = '#pomodoro'")
+        pg.click('#pomo-principal')  # Pausar, para não deixar alarme para os outros testes
+        check(espera(lambda: alarme() is None), 'pausa final: sem alarme pendente')
+        pg.evaluate("location.hash = ''")
+
         # --- service worker: push de verdade (CDP) e clique
         BOMBA[0] = ctx.cookies
         cdp = ctx.new_cdp_session(pg)
@@ -319,6 +360,16 @@ try:
         reg = sw.evaluate('self.__registro')
         check(reg == [['abriu', BASE]], f'clique com o app fechado abre o app em ./ ({reg})')
         pg = ctx.new_page(); pg.goto(BASE); pg.wait_for_selector('.card'); pg.evaluate('navigator.serviceWorker.ready')
+
+        # alarme do Pomodoro chegando pelo push: tag própria (não substitui o resumo) e leva à tela do Pomodoro
+        cdp = ctx.new_cdp_session(pg)  # a sessão anterior morreu junto com a página fechada acima
+        cdp.send('ServiceWorker.enable')
+        entregar(json.dumps({'titulo': 'Foco concluído', 'corpo': 'Hora da pausa de 5 min.', 'tag': 'pomodoro', 'url': './#pomodoro', 'marco': False}))
+        lista = espera(lambda: notificacoes(pg))
+        check(len(lista) == 1 and lista[0]['tag'] == 'pomodoro' and lista[0]['corpo'] == 'Hora da pausa de 5 min.' and lista[0]['url'] == BASE + '#pomodoro', 'push do alarme do Pomodoro vira notificação que leva a #pomodoro')
+        entregar(json.dumps(carga)); espera(lambda: len(notificacoes(pg)) == 2)
+        check(sorted(n['tag'] for n in notificacoes(pg)) == ['pomodoro', 'resumo-diario'], 'o aviso do Pomodoro e o resumo diário convivem na bandeja')
+        sw.evaluate("async () => { for (const n of await self.registration.getNotifications()) n.close(); }")
 
         # --- falha de rede: o app segue, o que mudou fica pendente e chega quando o servidor volta
         derrubar()
