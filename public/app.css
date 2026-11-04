@@ -103,16 +103,16 @@ button, input { font: inherit; color: inherit; }
 .btn.big { min-height: 56px; font-size: 17px; width: 100%; text-transform: uppercase; letter-spacing: 0.1em; }
 @media (prefers-reduced-motion: no-preference) { .btn:active { transform: scale(0.98); } }
 
-.card {
+.card, .conv-cartao {
   position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px;
   backdrop-filter: blur(14px); box-shadow: var(--sombra);
 }
 /* cantos de HUD */
-.card::before, .card::after {
+.card::before, .card::after, .conv-cartao::before, .conv-cartao::after {
   content: ''; position: absolute; width: 22px; height: 22px; pointer-events: none; border: 0 solid var(--accent);
 }
-.card::before { top: -1px; left: -1px; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 18px; }
-.card::after { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 18px; }
+.card::before, .conv-cartao::before { top: -1px; left: -1px; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 18px; }
+.card::after, .conv-cartao::after { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 18px; }
 
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field label { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
@@ -141,7 +141,7 @@ button, input { font: inherit; color: inherit; }
 .error:empty { display: none; }
 
 .list { display: flex; flex-direction: column; gap: 16px; }
-.card { display: flex; flex-direction: column; gap: 14px; }
+.card, .conv-cartao { display: flex; flex-direction: column; gap: 14px; }
 .card.example { border-style: dashed; opacity: 0.85; }
 .head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
 .head h2 { margin: 0; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
@@ -245,8 +245,8 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(6px);
   --accent: #86B4FF; --accent-ink: #0E161B; --danger: #FF8A80;
 }
 [data-visual="classico"] body { background-image: none; }
-[data-visual="classico"] .card { border-radius: 14px; backdrop-filter: none; }
-[data-visual="classico"] .card::before, [data-visual="classico"] .card::after { display: none; }
+[data-visual="classico"] .card, [data-visual="classico"] .conv-cartao { border-radius: 14px; backdrop-filter: none; }
+[data-visual="classico"] .card::before, [data-visual="classico"] .card::after, [data-visual="classico"] .conv-cartao::before, [data-visual="classico"] .conv-cartao::after { display: none; }
 [data-visual="classico"] .marcas { display: none; }
 [data-visual="classico"] .top h1 { background: none; color: var(--ink); letter-spacing: 0.02em; font-size: 36px; }
 [data-visual="classico"] .icone-btn { backdrop-filter: none; border-radius: 10px; }
@@ -273,6 +273,9 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(6px);
 .rotulo { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .field .seg label { text-transform: none; letter-spacing: 0; font-size: 15px; font-weight: 400; color: var(--ink); }
 
+.conv-cartao { gap: 10px; }
+.conv-cartao[hidden] { display: none; }
+.convite-titulo { margin: 0; font-weight: 600; font-size: 17px; }
 .acoes-topo { display: flex; gap: 10px; }
 .acoes-topo .btn { width: auto; white-space: nowrap; font-size: 15px; letter-spacing: 0.06em; }
 .acoes-topo #toggle-form { flex: 1 1 auto; }

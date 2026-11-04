@@ -177,7 +177,7 @@ def hora_longe_2():
 
 
 def notificacoes(pg):
-    return pg.evaluate("navigator.serviceWorker.ready.then(r => r.getNotifications()).then(l => l.map(n => ({titulo: n.title, corpo: n.body, tag: n.tag, url: n.data && n.data.url, icone: n.icon, badge: n.badge})))")
+    return pg.evaluate("navigator.serviceWorker.ready.then(r => r.getNotifications()).then(l => l.map(n => ({titulo: n.title, corpo: n.body, tag: n.tag, url: n.data && n.data.url, icone: n.icon, badge: n.badge, acoes: (n.actions || []).map(a => a.action), vibrar: n.vibrate ? n.vibrate.length : 0})))")
 
 
 try:
@@ -289,11 +289,67 @@ try:
         espera(alarme)
         pg.evaluate("location.hash = ''")
         check(alarme() is not None, 'sair da tela do Pomodoro não cancela o alarme')
-        pg.evaluate("location.hash = '#pomodoro'")
-        pg.click('#pomo-principal')  # Pausar, para não deixar alarme para os outros testes
-        check(espera(lambda: alarme() is None), 'pausa final: sem alarme pendente')
-        pg.evaluate("location.hash = ''")
+        # --- notificação fixa do Pomodoro e botões que agem com o app fechado
+        def do_pomo(tag='pomodoro'):
+            return [n for n in notificacoes(pg) if n['tag'] == tag]
 
+        check(espera(do_pomo), 'com o foco rodando, a notificação fixa do Pomodoro aparece na bandeja')
+        n = do_pomo()[0]
+        check(n['titulo'] == 'Foco 1 de 4' and n['corpo'].startswith('Termina às ') and n['acoes'] == ['pausar', 'parar'], f'ela mostra o fim e tem Pausar e Parar ({n["titulo"]}, {n["corpo"]}, {n["acoes"]})')
+        check(n['url'] == './#pomodoro', 'tocar nela leva à tela do Pomodoro')
+        sw0 = next(w for w in ctx.service_workers if w.url.endswith('/sw.js'))
+        BOMBA[0] = ctx.cookies
+        cdp0 = ctx.new_cdp_session(pg)
+        regs0 = {}
+        cdp0.on('ServiceWorker.workerRegistrationUpdated', lambda e: regs0.update({r['registrationId']: r for r in e['registrations']}))
+        cdp0.send('ServiceWorker.enable')
+        espera(lambda: regs0)
+        reg0 = next(iter(regs0))
+
+        def entregar0(dados):
+            cdp0.send('ServiceWorker.deliverPushMessage', {'origin': f'http://127.0.0.1:{PORTA}', 'registrationId': reg0, 'data': dados})
+
+        def botao_notificacao(acao):
+            sw0.evaluate("""async (acao) => {
+              const [n] = await self.registration.getNotifications({ tag: 'pomodoro' });
+              self.dispatchEvent(new NotificationEvent('notificationclick', { notification: n, action: acao }));
+              await new Promise((r) => setTimeout(r, 300));
+            }""", acao)
+
+        def estado_pomo():
+            return json.loads(pg.evaluate("localStorage.getItem('contagem-de-dias:pomodoro')"))
+
+        pg.evaluate("location.hash = '#pomodoro'")
+        pg.wait_for_selector('#tela-pomodoro:not([hidden])')
+        botao_notificacao('pausar')
+        check(espera(lambda: alarme() is None), 'botão Pausar da notificação cancela o alarme no servidor')
+        check(espera(lambda: do_pomo() and '(pausado)' in do_pomo()[0]['titulo'] and do_pomo()[0]['acoes'] == ['continuar', 'parar']), 'a notificação vira "pausado" com Continuar e Parar')
+        check(espera(lambda: pg.locator('#pomo-principal').text_content() == 'Continuar' and estado_pomo()['rodando'] is False), 'o app aberto adota o estado pausado feito pela notificação')
+        botao_notificacao('continuar')
+        check(espera(alarme), 'botão Continuar da notificação recria o alarme')
+        check(espera(lambda: pg.locator('#pomo-principal').text_content() == 'Pausar' and estado_pomo()['rodando'] is True and alarme()[0] == estado_pomo()['fimEm']), 'o app adota o estado rodando e o alarme coincide com o fim')
+        botao_notificacao('parar')
+        check(espera(lambda: alarme() is None and not do_pomo()), 'botão Parar apaga a notificação e o alarme')
+        check(espera(lambda: pg.locator('#pomo-principal').text_content() == 'Iniciar foco' and estado_pomo()['rodando'] is False), 'o app volta ao início')
+
+        # aviso de fim com o botão "Iniciar pausa": simula que o foco acabou há 1 minuto com o app em segundo plano
+        manter = json.loads(pg.evaluate("localStorage.getItem('contagem-de-dias:v2')"))['contagens']
+        vazia = next(c for c in manter if not c.get('checkins'))
+        pg.evaluate("location.hash = ''")
+        agora_ms = int(time.time() * 1000)
+        fim = {'versao': 1, 'fase': 'foco', 'ciclo': 1, 'rodando': True, 'fimEm': agora_ms - 60000, 'restanteMs': 1500000, 'contagemId': vazia['id'], 'dias': {}, 'atualizadoEm': agora_ms - 1000}
+        pg.evaluate("(e) => Armazem.gravar('pomodoro', e)", fim)
+        entregar0(json.dumps({'titulo': 'Foco concluído', 'corpo': 'Hora da pausa de 5 min.', 'tag': 'pomodoro', 'url': './#pomodoro', 'proxima': 'pausa'}))
+        check(espera(do_pomo) and do_pomo()[0]['acoes'] == ['iniciar'] and do_pomo()[0]['vibrar'] == 5, 'o aviso de fim traz o botão "Iniciar pausa" e vibra')
+        botao_notificacao('iniciar')
+        check(espera(alarme) and alarme()[1:] == ('pausa', 'foco'), 'Iniciar pausa agenda o alarme da pausa no servidor, sem abrir o app')
+        check(espera(lambda: do_pomo() and do_pomo()[0]['titulo'] == 'Pausa' and do_pomo()[0]['acoes'] == ['pausar', 'parar']), 'a notificação passa a mostrar a pausa em andamento')
+        check(espera(lambda: estado_pomo()['fase'] == 'pausa' and estado_pomo()['rodando'] is True and sum(estado_pomo()['dias'].values()) == 1), 'o app adota a pausa em andamento, com o pomodoro contado')
+        hoje = datetime.date.today().isoformat()
+        est_v2 = lambda: next(c for c in json.loads(pg.evaluate("localStorage.getItem('contagem-de-dias:v2')"))['contagens'] if c['id'] == vazia['id'])
+        check(espera(lambda: hoje in (est_v2().get('checkins') or [])), 'o foco concluído pela notificação marca o check-in da contagem vinculada')
+        botao_notificacao('parar')
+        check(espera(lambda: alarme() is None and not do_pomo()), 'Parar encerra tudo: sem alarme e sem notificação no fim')
         # --- service worker: push de verdade (CDP) e clique
         BOMBA[0] = ctx.cookies
         cdp = ctx.new_cdp_session(pg)
@@ -517,7 +573,46 @@ try:
         check(espera(lambda: 'Usado' in pgA.locator('#a-convites-lista').inner_text()), 'a lista passa a mostrar o convite como usado')
         pgA.click('#a-convites-lista button'); pgA.click('#a-convites-lista button')
         check(espera(lambda: len(dispositivos()) == antes + 1), 'dois toques em "Remover aparelho" apagam o aparelho convidado')
-        check(not errosA and not errosB and not errosC, f'convites sem erros de JavaScript {errosA + errosB + errosC}')
+
+        # --- convite por link: um toque ativa, sem digitar nada
+        pgA.fill('#a-convite-nome', 'Joana')
+        pgA.click('#a-convite-gerar')
+        check(espera(lambda: pgA.locator('#a-convite-novo').is_visible() and pgA.locator('#a-convite-codigo').inner_text() != codigo), 'segundo convite gerado (Joana)')
+        codigo2 = pgA.locator('#a-convite-codigo').inner_text()
+        total = len(dispositivos())
+        ctxD = novo_contexto(b)
+        pgD = ctxD.new_page()
+        errosD = []
+        pgD.on('pageerror', lambda e: errosD.append(str(e)))
+        pgD.goto(BASE + '#convite=' + codigo2.lower().replace('-', ''))
+        pgD.wait_for_selector('#convite-cartao:not([hidden])')
+        pgD.evaluate('navigator.serviceWorker.ready')
+        check(pgD.evaluate('location.hash') == '' and 'convite' not in pgD.url, 'o convite sai do endereço depois de lido')
+        check('convidado' in pgD.locator('#convite-cartao').inner_text() and pgD.locator('#convite-ativar').is_visible(), 'o cartão "Você foi convidado" aparece com o botão')
+        check(pgD.evaluate("JSON.parse(localStorage.getItem('contagem-de-dias:convite')).codigo") == codigo2, 'o código fica guardado só até ser usado')
+        check(pgD.evaluate('window.__pedidos') == 0 and len(dispositivos()) == total, 'abrir o link não pede permissão nem cadastra nada')
+        foto(pgD, '28-convite-link')
+        pgD.click('#convite-ativar')
+        check(espera(lambda: pgD.locator('#convite-cartao').is_hidden()), 'um toque ativa os avisos e o cartão some')
+        check(pgD.evaluate('window.__pedidos') == 1, 'a permissão foi pedida uma vez, após o toque')
+        check(len(dispositivos()) == total + 1 and linhas('SELECT admin FROM dispositivos ORDER BY criado_em DESC LIMIT 1')[0][0] == 0, 'o aparelho convidado pelo link foi cadastrado, sem poder de administrador')
+        check(pgD.evaluate("localStorage.getItem('contagem-de-dias:convite')") is None and CODIGO_NAO_GUARDADO(pgD, codigo2), 'depois de usar, o código não fica guardado')
+        ctxD.close()
+
+        # --- o mesmo link de novo: convite usado, mensagem clara e nada guardado
+        ctxE = novo_contexto(b)
+        pgE = ctxE.new_page()
+        pgE.goto(BASE + '#convite=' + codigo2)
+        pgE.wait_for_selector('#convite-cartao:not([hidden])')
+        pgE.click('#convite-ativar')
+        check(espera(lambda: 'não vale mais' in pgE.locator('#convite-erro').inner_text()), 'link já usado: o cartão explica que o convite não vale mais')
+        check(pgE.evaluate("localStorage.getItem('contagem-de-dias:convite')") is None and len(dispositivos()) == total + 1, 'convite inválido é descartado e nada é cadastrado')
+        # endereço com convite malformado: nada aparece e o endereço é limpo
+        pgE.goto(BASE + '#convite=isso-nao-e-um-convite'); pgE.reload()
+        pgE.wait_for_selector('.card')
+        check(pgE.evaluate('location.hash') == '' and pgE.locator('#convite-cartao').is_hidden() or 'não vale mais' in pgE.locator('#convite-cartao').inner_text(), 'convite malformado não vira cartão')
+        ctxE.close()
+        check(not errosA and not errosB and not errosC and not errosD, f'convites sem erros de JavaScript {errosA + errosB + errosC + errosD}')
         ctxA.close()
         b.close()
     check(not linhas('SELECT 1 FROM dispositivos WHERE push_endpoint IS NOT NULL AND ultimo_envio IS NOT NULL'), 'o servidor nunca tentou enviar um aviso durante o teste')

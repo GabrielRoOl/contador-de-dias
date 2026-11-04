@@ -6,6 +6,9 @@
   else root.Sincronia = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   var CHAVE = 'contagem-de-dias:push';
+  var CHAVE_CONVITE = 'contagem-de-dias:convite'; // convite vindo do link, guardado só até ser usado
+  var VALIDADE_CONVITE_MS = 7 * 24 * 3600 * 1000;
+  var ALFABETO_CONVITE = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // o mesmo do servidor (sem I, O, 0 e 1)
   var BASE = './api/'; // relativa à página: no servidor vira /contador/api/
   var ESPERA_ENVIO_MS = 2000;
   var LIMITE_REDE_MS = 10000;
@@ -52,6 +55,25 @@
       })
     });
   }
+
+  /* "#convite=XXXX-XXXX-XXXX-XXXX-XXXX" -> o código no formato do servidor, ou null se o endereço não traz um convite válido. */
+  function conviteDoHash(hash) {
+    var m = /^#convite=(.{1,80})$/.exec(String(hash || ''));
+    if (!m) return null;
+    var txt;
+    try { txt = decodeURIComponent(m[1]); } catch (e) { return null; }
+    txt = txt.toUpperCase();
+    var limpo = '';
+    for (var i = 0; i < txt.length; i++) {
+      var c = txt.charAt(i);
+      if (ALFABETO_CONVITE.indexOf(c) !== -1) limpo += c;
+      else if (c !== '-' && c !== ' ') return null;
+    }
+    if (limpo.length !== 20) return null;
+    return limpo.match(/.{4}/g).join('-');
+  }
+  /* Endereço do app (com a barra final) + o convite depois do #: o navegador não envia o # ao servidor. */
+  function linkConvite(base, codigo) { return base + '#convite=' + encodeURIComponent(codigo); }
 
   function criar(amb) {
     var cred = null; // {id, segredo, ativo, pendente, endpoint}
@@ -120,6 +142,21 @@
     function caminhoDispositivo(sufixo) { return 'dispositivos/' + encodeURIComponent(cred.id) + (sufixo || ''); }
     function ehRede(e) { return e && e.message === 'rede'; }
 
+    /* ---------- convite recebido por link ---------- */
+    function agoraMs() { return amb.agora ? amb.agora() : Date.now(); }
+    function convitePendente() {
+      try {
+        var c = JSON.parse(amb.storage.getItem(CHAVE_CONVITE));
+        if (c && typeof c.codigo === 'string' && typeof c.em === 'number' && agoraMs() - c.em < VALIDADE_CONVITE_MS && agoraMs() >= c.em - 60000) return c.codigo;
+      } catch (e) { /* sem convite guardado */ }
+      descartarConvite();
+      return null;
+    }
+    function guardarConvite(codigo) {
+      try { amb.storage.setItem(CHAVE_CONVITE, JSON.stringify({ codigo: codigo, em: agoraMs() })); } catch (e) { /* sem espaço: o link só vale nesta abertura */ }
+    }
+    function descartarConvite() { try { amb.storage.removeItem(CHAVE_CONVITE); } catch (e) { /* nada a fazer */ } }
+
     /* ---------- ativar ---------- */
     function esperarSw() {
       return Promise.race([
@@ -142,7 +179,10 @@
         reg = r;
         if (cred) return null;
         return pedir('POST', 'dispositivos', undefined, { convite: convite }).then(function (resp) {
-          if (resp.status === 403) throw falha(convite ? 'convite-invalido' : 'convite');
+          if (resp.status === 403) {
+            if (convite && convite === convitePendente()) descartarConvite(); // já foi usado, venceu ou foi revogado
+            throw falha(convite ? 'convite-invalido' : 'convite');
+          }
           if (resp.status === 429) throw falha('limite');
           if (resp.status === 503) throw falha('servidor-cheio');
           if (resp.status !== 201 || !resp.json || !resp.json.id || !resp.json.segredo) throw falha('rede');
@@ -183,6 +223,7 @@
         cred.ativo = true;
         cred.pendente = false;
         gravar();
+        descartarConvite(); // um aparelho ativo não precisa mais do convite guardado
         mudou();
         return { ok: true };
       }).catch(function (e) {
@@ -344,9 +385,12 @@
       status: status, ativar: ativar, desativar: desativar, agendar: agendar, retomar: retomar, alarme: alarme,
       descarregar: descarregar, verificar: verificar,
       ouvir: function (f) { ouvintes.push(f); },
+      convitePendente: convitePendente, guardarConvite: guardarConvite, descartarConvite: descartarConvite,
+      /* O que o service worker precisa para agir pelos botões da notificação (ele não enxerga o localStorage). */
+      credencial: function () { return cred && cred.ativo ? { id: cred.id, segredo: cred.segredo } : null; },
       temDispositivo: function () { return !!cred; }
     };
   }
 
-  return { criar: criar, espelho: espelho, base64UrlParaBytes: base64UrlParaBytes, bytesParaBase64Url: bytesParaBase64Url, mesmosBytes: mesmosBytes, corpoInscricao: corpoInscricao };
+  return { criar: criar, conviteDoHash: conviteDoHash, linkConvite: linkConvite, espelho: espelho, base64UrlParaBytes: base64UrlParaBytes, bytesParaBase64Url: bytesParaBase64Url, mesmosBytes: mesmosBytes, corpoInscricao: corpoInscricao };
 });

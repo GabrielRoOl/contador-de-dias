@@ -1,11 +1,14 @@
 // Mude o número da versão sempre que alterar algum arquivo do app.
-const CACHE = 'contagem-de-dias-v25';
+const CACHE = 'contagem-de-dias-v27';
 const ARQUIVOS = [
-  './', './index.html', './app.css', './logica.js', './textos.js', './sincronia.js', './pomodoro.js', './app.js', './manifest.webmanifest',
+  './', './index.html', './app.css', './logica.js', './textos.js', './sincronia.js', './pomodoro.js', './armazem.js', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './icon-badge.png',
   './fonts/big-shoulders-display-700.woff2', './fonts/big-shoulders-display-800.woff2',
   './fonts/instrument-sans-400.woff2', './fonts/instrument-sans-600.woff2'
 ];
+// Lógica do Pomodoro e armazém (IndexedDB) compartilhados com a página: os botões da notificação agem com o app fechado.
+importScripts('./pomodoro.js', './armazem.js');
+
 // Com a rede lenta demais, responde do cache em vez de travar o app.
 const ESPERA_REDE_MS = 4000;
 
@@ -93,27 +96,83 @@ function urlDoApp(v) {
 self.addEventListener('push', (e) => {
   const d = lerPush(e.data);
   const tag = typeof d.tag === 'string' && /^[\w-]{1,64}$/.test(d.tag) ? d.tag : 'resumo-diario';
-  e.waitUntil(self.registration.showNotification(texto(d.titulo, 100, TITULO_PADRAO), {
+  const opcoes = {
     body: texto(d.corpo, 300, CORPO_PADRAO),
     tag,
     renotify: true, // o resumo de hoje avisa de novo mesmo substituindo o de ontem, se ainda estiver na bandeja
     icon: './icon-192.png',
     badge: './icon-badge.png',
     data: { url: urlDoApp(d.url), marco: d.marco === true }
-  }));
+  };
+  if (tag === 'pomodoro') {
+    // Fim de fase: toca e vibra (o som é o da notificação do Android) e já traz o botão que inicia a fase seguinte.
+    opcoes.silent = false;
+    opcoes.vibrate = [300, 150, 300, 150, 300];
+    opcoes.requireInteraction = true;
+    if (FASES_POMODORO.indexOf(d.proxima) !== -1) {
+      opcoes.actions = [{ action: 'iniciar', title: self.Pomodoro.rotuloIniciar(d.proxima) }];
+      opcoes.data.proxima = d.proxima;
+    }
+  }
+  e.waitUntil(self.registration.showNotification(texto(d.titulo, 100, TITULO_PADRAO), opcoes));
 });
+
+const FASES_POMODORO = ['foco', 'pausa', 'longa'];
+const ACOES_POMODORO = ['pausar', 'continuar', 'iniciar', 'parar'];
+
+// Mantém no servidor o alarme que combina com o estado (o mesmo que a página faz quando está aberta). Melhor esforço.
+async function ajustarAlarme(desejado) {
+  const cred = await self.Armazem.ler('cred');
+  if (!cred || typeof cred.id !== 'string' || typeof cred.segredo !== 'string') return;
+  const url = new URL('api/dispositivos/' + encodeURIComponent(cred.id) + '/alarme', self.registration.scope).href;
+  const init = { method: desejado ? 'PUT' : 'DELETE', headers: { Authorization: 'Bearer ' + cred.segredo }, cache: 'no-store' };
+  if (desejado) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(desejado); }
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const corte = setTimeout(() => { if (ctl) ctl.abort(); }, 8000);
+  if (ctl) init.signal = ctl.signal;
+  try { await fetch(url, init); } catch (erro) { /* sem rede: o app concilia ao abrir */ } finally { clearTimeout(corte); }
+}
+
+// Botão da notificação do Pomodoro (Pausar, Continuar, Iniciar pausa, Parar): altera o estado guardado no armazém,
+// atualiza a notificação e o alarme do servidor, e avisa as janelas abertas para adotarem o novo estado.
+async function acaoPomodoro(acao) {
+  const bruto = await self.Armazem.ler('pomodoro');
+  if (!bruto) return false; // nada espelhado ainda: o app resolve quando abrir
+  const agora = Date.now();
+  const r = self.Pomodoro.aplicarAcao(self.Pomodoro.normalizar(bruto), acao, agora);
+  if (!r.aplicou) return false;
+  await self.Armazem.gravar('pomodoro', r.estado);
+  if (r.concluiu && r.concluiu.contou && r.concluiu.contagemId) {
+    // o check-in da contagem vinculada é do app (ele é dono das contagens): fica na fila até ele abrir
+    const fila = (await self.Armazem.ler('concluidos')) || [];
+    fila.push({ contagemId: r.concluiu.contagemId, dia: r.concluiu.dia });
+    await self.Armazem.gravar('concluidos', fila.slice(-20));
+  }
+  const n = self.Pomodoro.notificacao(r.estado, agora);
+  if (n) await self.registration.showNotification(n.titulo, self.Pomodoro.opcoesNotificacao(n));
+  await ajustarAlarme(self.Pomodoro.alarmeDe(r.estado));
+  const janelas = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+  janelas.forEach((j) => { try { j.postMessage({ tipo: 'pomodoro' }); } catch (erro) { /* janela fechando */ } });
+  return true;
+}
+
+async function abrirOuFocar(url) {
+  const janelas = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const aberta = janelas.find((j) => j.url.indexOf(self.registration.scope) === 0);
+  if (!aberta) return clients.openWindow(url);
+  await aberta.focus();
+  // Atalho para uma tela do app (./#pomodoro) leva até ela mesmo com o app aberto; mudar só a âncora não recarrega a página.
+  if (new URL(url).hash && aberta.url !== url && typeof aberta.navigate === 'function') {
+    try { await aberta.navigate(url); } catch (erro) { /* fica onde está */ }
+  }
+}
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const url = urlDoApp(e.notification.data && e.notification.data.url);
-  e.waitUntil((async () => {
-    const janelas = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const aberta = janelas.find((j) => j.url.indexOf(self.registration.scope) === 0);
-    if (!aberta) return clients.openWindow(url);
-    await aberta.focus();
-    // Atalho para uma tela do app (./#pomodoro) leva até ela mesmo com o app aberto; mudar só a âncora não recarrega a página.
-    if (new URL(url).hash && aberta.url !== url && typeof aberta.navigate === 'function') {
-      try { await aberta.navigate(url); } catch (erro) { /* fica onde está */ }
-    }
-  })());
+  if (ACOES_POMODORO.indexOf(e.action) !== -1) {
+    e.waitUntil(acaoPomodoro(e.action).then((agiu) => (agiu ? undefined : abrirOuFocar(url))));
+    return;
+  }
+  e.waitUntil(abrirOuFocar(url));
 });

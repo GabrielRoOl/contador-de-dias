@@ -20,7 +20,7 @@
   function copia(e, mudancas) { return Object.assign({}, e, mudancas); }
 
   function novo() {
-    return { versao: 1, fase: 'foco', ciclo: 1, rodando: false, fimEm: 0, restanteMs: DURACAO.foco, contagemId: null, dias: {} };
+    return { versao: 1, fase: 'foco', ciclo: 1, rodando: false, fimEm: 0, restanteMs: DURACAO.foco, contagemId: null, dias: {}, atualizadoEm: 0 };
   }
 
   /* rodando | pausado (já começou e parou) | pronto (fase inteira, esperando o toque) */
@@ -100,6 +100,7 @@
     var ciclo = Number(o.ciclo);
     if (!(ciclo >= 1 && ciclo <= CICLOS) || ciclo !== Math.floor(ciclo)) return base;
     var e = copia(base, { fase: o.fase, ciclo: ciclo });
+    if (typeof o.atualizadoEm === 'number' && isFinite(o.atualizadoEm) && o.atualizadoEm >= 0) e.atualizadoEm = o.atualizadoEm;
     if (typeof o.contagemId === 'string' && o.contagemId.length <= 64) e.contagemId = o.contagemId;
     if (o.dias && typeof o.dias === 'object') {
       Object.keys(o.dias).forEach(function (d) {
@@ -132,10 +133,54 @@
     return pad(Math.floor(s / 60)) + ':' + pad(s % 60);
   }
 
+  /* ---------- notificação fixa e ações (a página e o service worker usam o mesmo código) ---------- */
+
+  function tituloFase(e) {
+    return e.fase === 'foco' ? 'Foco ' + e.ciclo + ' de ' + CICLOS : e.fase === 'pausa' ? 'Pausa' : 'Pausa longa';
+  }
+  /* O que a notificação fixa mostra: rodando = horário do fim (não dá contagem ao vivo com o app fechado); pausado = o que resta.
+     Parado ou esperando o toque: null (sem notificação). */
+  function notificacao(e, agora) {
+    var st = status(e);
+    if (st === 'rodando' && e.fimEm > agora) {
+      var fim = new Date(e.fimEm);
+      return { titulo: tituloFase(e), corpo: 'Termina às ' + pad(fim.getHours()) + ':' + pad(fim.getMinutes()),
+        acoes: [{ action: 'pausar', title: 'Pausar' }, { action: 'parar', title: 'Parar' }] };
+    }
+    if (st === 'pausado') {
+      return { titulo: tituloFase(e) + ' (pausado)', corpo: 'Restam ' + formatarTempo(e.restanteMs),
+        acoes: [{ action: 'continuar', title: 'Continuar' }, { action: 'parar', title: 'Parar' }] };
+    }
+    return null;
+  }
+  /* Opções do showNotification da notificação fixa: sem som, com os botões, e a mesma tag do aviso de fim (que a substitui). */
+  function opcoesNotificacao(n) {
+    return { body: n.corpo, tag: 'pomodoro', silent: true, renotify: false, requireInteraction: true, actions: n.acoes,
+      icon: './icon-192.png', badge: './icon-badge.png', data: { url: './#pomodoro', pomodoro: true } };
+  }
+  function rotuloIniciar(fase) {
+    return fase === 'foco' ? 'Iniciar foco' : fase === 'pausa' ? 'Iniciar pausa' : 'Iniciar pausa longa';
+  }
+  /* O alarme que o servidor deve ter para este estado (null = nenhum). */
+  function alarmeDe(e) { return e.rodando ? { em: e.fimEm, fase: e.fase, proxima: pular(e).fase } : null; }
+
+  /* Ação de um botão da notificação (pausar, continuar, iniciar, parar). Primeiro fecha a fase se ela já acabou, depois aplica.
+     Idempotente: tocar num botão velho só atualiza a notificação, não desfaz o que o usuário já fez no app. */
+  function aplicarAcao(e, acao, agora) {
+    var r = avancar(e, agora);
+    var s = r.estado;
+    if (acao === 'pausar') s = pausar(s, agora);
+    else if (acao === 'continuar' || acao === 'iniciar') s = iniciar(s, agora);
+    else if (acao === 'parar') s = parar(s);
+    else return { estado: s, concluiu: r.concluiu, aplicou: false };
+    return { estado: copia(s, { atualizadoEm: agora }), concluiu: r.concluiu, aplicou: true };
+  }
+
   return {
     CHAVE: CHAVE, DURACAO: DURACAO, CICLOS: CICLOS, MAX_DIAS: MAX_DIAS,
     novo: novo, status: status, restante: restante, iniciar: iniciar, pausar: pausar, parar: parar, pular: pular, avancar: avancar,
     vincular: vincular, pomodorosDoDia: pomodorosDoDia, historico: historico, total: total,
+    notificacao: notificacao, opcoesNotificacao: opcoesNotificacao, rotuloIniciar: rotuloIniciar, alarmeDe: alarmeDe, aplicarAcao: aplicarAcao,
     normalizar: normalizar, carregar: carregar, salvar: salvar, formatarTempo: formatarTempo, dataLocal: dataLocal
   };
 });

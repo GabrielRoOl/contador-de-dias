@@ -9,7 +9,7 @@ const sw = fs.readFileSync(path.join(pub, 'sw.js'), 'utf8');
 const versaoSw = Number(/contagem-de-dias-v(\d+)/.exec(sw)[1]);
 
 test('CSS e JS do index.html têm ?v= igual à versão do cache do sw.js', () => {
-  const arquivos = ['app.css', 'logica.js', 'textos.js', 'sincronia.js', 'pomodoro.js', 'app.js'];
+  const arquivos = ['app.css', 'logica.js', 'textos.js', 'sincronia.js', 'pomodoro.js', 'armazem.js', 'app.js'];
   arquivos.forEach((a) => {
     const m = new RegExp('(?:href|src)="' + a.replace('.', '\\.') + '\\?v=(\\d+)"').exec(html);
     assert.ok(m, a + ' sem ?v= no index.html (rode: node scripts/versao.js)');

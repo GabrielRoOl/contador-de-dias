@@ -369,6 +369,39 @@
   });
   sync.ouvir(renderNotif);
 
+  /* ---------- convite recebido por link: um toque ativa os avisos ---------- */
+  var cartaoConvite = document.getElementById('convite-cartao');
+  var conviteUi = { erro: '', ocupado: false };
+  function renderConvite() {
+    var st = sync.status();
+    if (st === 'ativo') { sync.descartarConvite(); conviteUi.erro = ''; }
+    var tem = st !== 'ativo' && st !== 'nao-suportado' && !!sync.convitePendente();
+    cartaoConvite.hidden = !(tem || conviteUi.erro);
+    if (cartaoConvite.hidden) return;
+    var botao = document.getElementById('convite-ativar');
+    document.getElementById('convite-texto').textContent = !tem ? ''
+      : st === 'bloqueado' ? 'As notificações estão bloqueadas para este site. Libere nas configurações do navegador e abra o link de novo.'
+      : 'Toque para receber um aviso por dia com suas contagens. O app pede a sua permissão.';
+    document.getElementById('convite-erro').textContent = conviteUi.erro;
+    botao.hidden = !tem || st === 'bloqueado';
+    botao.disabled = conviteUi.ocupado;
+    botao.textContent = conviteUi.ocupado ? 'Aguarde…' : conviteUi.erro ? 'Tentar de novo' : 'Ativar os avisos';
+  }
+  document.getElementById('convite-ativar').addEventListener('click', function () {
+    var codigo = sync.convitePendente();
+    if (!codigo || conviteUi.ocupado) return;
+    conviteUi.ocupado = true; conviteUi.erro = '';
+    renderConvite();
+    sync.ativar(estado, codigo).then(function (r) {
+      conviteUi.ocupado = false;
+      if (!r.ok) conviteUi.erro = r.motivo === 'convite-invalido' ? 'Este convite não vale mais: já foi usado, venceu ou foi revogado. Peça outro a quem enviou.' : (ERRO_ATIVAR[r.motivo] || ERRO_ATIVAR.servidor);
+      renderConvite();
+      renderNotif();
+      atualizarConvites();
+    });
+  });
+  sync.ouvir(renderConvite);
+
   /* ---------- convites (só aparece no aparelho administrador) ---------- */
   var painelConvites = document.getElementById('a-convites');
   var ERRO_CONVITE = {
@@ -448,10 +481,10 @@
       atualizarConvites();
     });
   });
+  /* O convite vai dentro do link, depois do #: o servidor nem os registros do túnel chegam a vê-lo. */
+  function linkDoConvite() { return window.Sincronia.linkConvite(location.origin + location.pathname.replace(/[^\/]*$/, ''), codigoAtual); }
   function mensagemConvite() {
-    var url = location.origin + location.pathname.replace(/[^\/]*$/, '');
-    return 'Convite para o Contador de Dias: ' + codigoAtual + '\nVale 7 dias e só pode ser usado uma vez.\nAbra ' + url +
-      ', toque na engrenagem (Ajustes), em "Ativar notificações" e digite o código.';
+    return 'Convite para o Contador de Dias. Abra o link e toque em "Ativar os avisos":\n' + linkDoConvite() + '\nVale 7 dias e só pode ser usado uma vez.';
   }
   document.getElementById('a-convite-compartilhar').addEventListener('click', function () {
     if (!codigoAtual) return;
@@ -459,7 +492,7 @@
     if (navigator.clipboard) navigator.clipboard.writeText(mensagemConvite()).catch(function () {});
   });
   document.getElementById('a-convite-copiar').addEventListener('click', function () {
-    if (codigoAtual && navigator.clipboard) navigator.clipboard.writeText(codigoAtual).catch(function () {});
+    if (codigoAtual && navigator.clipboard) navigator.clipboard.writeText(linkDoConvite()).catch(function () {});
   });
 
   var dialogo = document.getElementById('ajustes');
@@ -610,7 +643,49 @@
   var tituloOriginal = document.title;
   var NOME_FASE = { foco: 'Foco', pausa: 'Pausa', longa: 'Pausa longa' };
 
-  function pomoSalvar() { PM.salvar(localStorage, pomo); }
+  /* O service worker também altera o estado (botões da notificação), então ele é espelhado no armazém, com carimbo de hora:
+     quem escreveu por último vale. O carimbo só muda aqui, nas alterações feitas nesta página. */
+  function pomoSalvar() {
+    pomo.atualizadoEm = Date.now();
+    PM.salvar(localStorage, pomo);
+    window.Armazem.gravar('pomodoro', pomo);
+  }
+  function espelharCred() { window.Armazem.gravar('cred', sync.credencial()); }
+
+  /* Traz para esta página o que o service worker fez com a página fechada (Pausar, Parar, Iniciar pausa na notificação):
+     o estado mais novo e os check-ins dos focos que ele concluiu. */
+  function pomoAdotar() {
+    return Promise.all([window.Armazem.ler('pomodoro'), window.Armazem.ler('concluidos')]).then(function (r) {
+      var de = r[0] ? PM.normalizar(r[0]) : null, fila = r[1];
+      var mudou = false;
+      if (de && de.atualizadoEm > pomo.atualizadoEm) { pomo = de; PM.salvar(localStorage, pomo); mudou = true; }
+      else if (!de || de.atualizadoEm < pomo.atualizadoEm) window.Armazem.gravar('pomodoro', pomo);
+      if (Array.isArray(fila) && fila.length) {
+        var checkins = false;
+        fila.forEach(function (c) {
+          var alvo = c && typeof c.dia === 'string' ? achar(c.contagemId) : null;
+          if (alvo && alvo.tipo === 'manter' && !somenteLeitura) { substituir(L.registrarCheckin(alvo, c.dia)); checkins = true; }
+        });
+        window.Armazem.gravar('concluidos', null);
+        if (checkins) { persist(); render(); }
+      }
+      if (mudou) { pomoUi.msg = ''; pomoAgendar(); pomoRender(); }
+    });
+  }
+
+  /* Notificação fixa do Pomodoro (com Pausar/Parar) enquanto uma sessão roda ou está pausada. Só com a permissão já dada. */
+  var pomoAvisoChave = null;
+  function pomoNotificar() {
+    if (!('Notification' in window) || Notification.permission !== 'granted' || !navigator.serviceWorker) return;
+    var n = PM.notificacao(pomo, Date.now());
+    var chave = n ? n.titulo + '|' + n.corpo : '';
+    if (chave === pomoAvisoChave) return;
+    pomoAvisoChave = chave;
+    navigator.serviceWorker.ready.then(function (reg) {
+      if (n) return reg.showNotification(n.titulo, PM.opcoesNotificacao(n));
+      return reg.getNotifications({ tag: 'pomodoro' }).then(function (lista) { lista.forEach(function (x) { x.close(); }); });
+    }).catch(function () { /* sem notificação: o relógio da tela continua igual */ });
+  }
 
   /* Silêncio total é falha comum em PWA: o navegador só libera áudio depois de um toque, então prepara aqui. */
   function prepararAudio() {
@@ -676,7 +751,8 @@
     if (pomoFim) { clearTimeout(pomoFim); pomoFim = null; }
     if (pomo.rodando) pomoFim = setTimeout(pomoVerificar, Math.max(0, pomo.fimEm - Date.now()) + 30);
     // com o app fechado quem avisa é o servidor; ao pausar, pular, parar ou concluir o alarme é cancelado
-    sync.alarme(pomo.rodando ? { em: pomo.fimEm, fase: pomo.fase, proxima: PM.pular(pomo).fase } : null);
+    sync.alarme(PM.alarmeDe(pomo));
+    pomoNotificar();
   }
 
   var elPomo = {
@@ -731,7 +807,8 @@
   }
 
   // ativar ou desativar as notificações muda se o servidor pode avisar: concilia o alarme e a dica da tela
-  sync.ouvir(function () { pomoAgendar(); pomoRender(); });
+  sync.ouvir(function () { espelharCred(); pomoAgendar(); pomoRender(); });
+  if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.tipo === 'pomodoro') pomoAdotar(); });
 
   var armadoTimer = null;
   function desarmarParar() { pomoUi.armado = false; if (armadoTimer) { clearTimeout(armadoTimer); armadoTimer = null; } }
@@ -794,15 +871,24 @@
 
   /* ---------- início ---------- */
   carregar();
+  // um convite no endereço (#convite=...) fica guardado até ser usado, e o endereço volta a ficar limpo
+  if (/^#convite/.test(location.hash)) {
+    var conviteLink = window.Sincronia.conviteDoHash(location.hash);
+    if (conviteLink) sync.guardarConvite(conviteLink);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  renderConvite();
   pomo = PM.carregar(localStorage);
   aplicarTela();
   pomoVerificar();
+  espelharCred();
+  pomoAdotar();
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', sincronizarCorBarra);
   render();
   setInterval(tick, 15000);
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) sync.descarregar();
-    else { tick(); sync.retomar(estado); document.title = tituloOriginal; pomoVerificar(); }
+    else { tick(); sync.retomar(estado); document.title = tituloOriginal; pomoAdotar().then(pomoVerificar); }
   });
   window.addEventListener('online', function () { sync.retomar(estado); pomoAgendar(); });
   sync.retomar(estado);

@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="app.css?v=25">
+<link rel="stylesheet" href="app.css?v=27">
 <script>try{var p=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias,r=document.documentElement;if(p.visual)r.setAttribute('data-visual',p.visual);if(p.modo==='claro')r.setAttribute('data-theme','light');else if(p.modo==='escuro')r.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
@@ -24,6 +24,13 @@
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"/></svg>
     </button>
   </header>
+
+  <div class="conv-cartao" id="convite-cartao" hidden>
+    <p class="convite-titulo">Você foi convidado</p>
+    <p class="hint" id="convite-texto"></p>
+    <p class="error" id="convite-erro" role="alert"></p>
+    <button class="btn primary" type="button" id="convite-ativar">Ativar os avisos</button>
+  </div>
 
   <div class="acoes-topo">
     <button class="btn primary big" id="toggle-form" type="button" aria-haspopup="dialog">Nova contagem</button>
@@ -176,7 +183,7 @@
         <p class="codigo" id="a-convite-codigo"></p>
         <div class="actions">
           <button class="btn small primary" type="button" id="a-convite-compartilhar">Compartilhar</button>
-          <button class="btn small" type="button" id="a-convite-copiar">Copiar</button>
+          <button class="btn small" type="button" id="a-convite-copiar">Copiar link</button>
         </div>
       </div>
       <ul class="historico" id="a-convites-lista" aria-labelledby="a-convites-rotulo"></ul>
@@ -199,10 +206,11 @@
   </div>
 </dialog>
 
-<script src="logica.js?v=25"></script>
-<script src="textos.js?v=25"></script>
-<script src="pomodoro.js?v=25"></script>
-<script src="sincronia.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="logica.js?v=27"></script>
+<script src="textos.js?v=27"></script>
+<script src="pomodoro.js?v=27"></script>
+<script src="armazem.js?v=27"></script>
+<script src="sincronia.js?v=27"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>

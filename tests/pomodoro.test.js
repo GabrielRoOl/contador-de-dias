@@ -175,3 +175,91 @@ test('formatarTempo arredonda para cima e nunca fica negativo', () => {
   assert.equal(P.formatarTempo(0), '00:00');
   assert.equal(P.formatarTempo(-5), '00:00');
 });
+
+/* ---------- notificação fixa e botões ---------- */
+const hhmm = (ms) => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+
+test('notificação fixa: rodando mostra o horário do fim e Pausar/Parar', () => {
+  const e = P.iniciar(P.novo(), T0);
+  const n = P.notificacao(e, T0 + 1000);
+  assert.equal(n.titulo, 'Foco 1 de 4');
+  assert.equal(n.corpo, 'Termina às ' + hhmm(T0 + P.DURACAO.foco));
+  assert.deepEqual(n.acoes.map((a) => a.action), ['pausar', 'parar']);
+  assert.equal(P.notificacao(P.iniciar(P.pular(P.novo()), T0), T0).titulo, 'Pausa');
+  const longa = { ...P.novo(), fase: 'longa', ciclo: 4, restanteMs: P.DURACAO.longa };
+  assert.equal(P.notificacao(P.iniciar(longa, T0), T0).titulo, 'Pausa longa');
+});
+
+test('notificação fixa: pausado mostra o que resta e Continuar/Parar; parado e fim de fase não mostram nada', () => {
+  const pausado = P.pausar(P.iniciar(P.novo(), T0), T0 + 10 * 60000);
+  const n = P.notificacao(pausado, T0 + 20 * 60000);
+  assert.equal(n.titulo, 'Foco 1 de 4 (pausado)');
+  assert.equal(n.corpo, 'Restam 15:00');
+  assert.deepEqual(n.acoes.map((a) => a.action), ['continuar', 'parar']);
+  assert.equal(P.notificacao(P.novo(), T0), null);
+  assert.equal(P.notificacao(P.pular(P.iniciar(P.novo(), T0)), T0), null);
+  const acabou = P.iniciar(P.novo(), T0);
+  assert.equal(P.notificacao(acabou, T0 + P.DURACAO.foco), null, 'fase que já acabou não mostra "termina às"');
+});
+
+test('opções da notificação fixa: silenciosa, com os botões e a tag do aviso de fim', () => {
+  const o = P.opcoesNotificacao(P.notificacao(P.iniciar(P.novo(), T0), T0));
+  assert.equal(o.tag, 'pomodoro'); assert.equal(o.silent, true); assert.equal(o.renotify, false);
+  assert.equal(o.data.url, './#pomodoro'); assert.equal(o.actions.length, 2);
+});
+
+test('rótulo do botão de iniciar e alarme do servidor por estado', () => {
+  assert.equal(P.rotuloIniciar('foco'), 'Iniciar foco');
+  assert.equal(P.rotuloIniciar('pausa'), 'Iniciar pausa');
+  assert.equal(P.rotuloIniciar('longa'), 'Iniciar pausa longa');
+  const e = P.iniciar(P.novo(), T0);
+  assert.deepEqual(P.alarmeDe(e), { em: T0 + P.DURACAO.foco, fase: 'foco', proxima: 'pausa' });
+  assert.equal(P.alarmeDe(P.pausar(e, T0 + 1000)), null);
+  assert.equal(P.alarmeDe(P.novo()), null);
+  const quarto = { ...P.novo(), ciclo: 4 };
+  assert.equal(P.alarmeDe(P.iniciar(quarto, T0)).proxima, 'longa');
+  assert.equal(P.alarmeDe(P.iniciar(P.pular(P.novo()), T0)).proxima, 'foco');
+});
+
+test('botão Iniciar pausa depois do fim do foco: conta o pomodoro e começa a pausa a partir do toque', () => {
+  const e = { ...P.iniciar(P.vincular(P.novo(), 'ingles'), T0) };
+  const toque = T0 + P.DURACAO.foco + 3 * 60000; // tocou 3 min depois do aviso
+  const r = P.aplicarAcao(e, 'iniciar', toque);
+  assert.equal(r.aplicou, true);
+  assert.equal(r.concluiu.fase, 'foco'); assert.equal(r.concluiu.contou, true); assert.equal(r.concluiu.contagemId, 'ingles');
+  assert.equal(r.estado.fase, 'pausa'); assert.equal(r.estado.rodando, true);
+  assert.equal(r.estado.fimEm, toque + P.DURACAO.pausa);
+  assert.equal(r.estado.atualizadoEm, toque);
+  assert.equal(P.total(r.estado), 1);
+});
+
+test('botões Pausar, Continuar e Parar', () => {
+  const rodando = P.iniciar(P.novo(), T0);
+  const p = P.aplicarAcao(rodando, 'pausar', T0 + 5 * 60000);
+  assert.equal(P.status(p.estado), 'pausado'); assert.equal(p.estado.restanteMs, P.DURACAO.foco - 5 * 60000);
+  const c = P.aplicarAcao(p.estado, 'continuar', T0 + 9 * 60000);
+  assert.equal(c.estado.rodando, true); assert.equal(c.estado.fimEm, T0 + 9 * 60000 + P.DURACAO.foco - 5 * 60000);
+  const x = P.aplicarAcao(c.estado, 'parar', T0 + 10 * 60000);
+  assert.deepEqual([x.estado.fase, x.estado.ciclo, x.estado.rodando], ['foco', 1, false]);
+  assert.equal(x.estado.atualizadoEm, T0 + 10 * 60000);
+});
+
+test('botão velho é inofensivo: não conta pomodoro duas vezes nem desfaz o que já foi feito', () => {
+  const rodando = P.iniciar(P.novo(), T0);
+  const dentro = P.aplicarAcao(rodando, 'iniciar', T0 + 60000); // já está rodando
+  assert.equal(dentro.estado.fimEm, rodando.fimEm);
+  const depois = P.aplicarAcao(rodando, 'iniciar', T0 + P.DURACAO.foco + 1000);
+  const dois = P.aplicarAcao(depois.estado, 'iniciar', T0 + P.DURACAO.foco + 2000);
+  assert.equal(P.total(dois.estado), 1);
+  assert.equal(dois.concluiu, null);
+  const pausar = P.aplicarAcao(P.novo(), 'pausar', T0); // nada rodando
+  assert.equal(P.status(pausar.estado), 'pronto');
+  assert.equal(P.aplicarAcao(rodando, 'dançar', T0).aplicou, false);
+});
+
+test('atualizadoEm sobrevive ao salvar e carregar, e lixo vira 0', () => {
+  const e = { ...P.novo(), atualizadoEm: 12345 };
+  assert.equal(P.normalizar(JSON.parse(JSON.stringify(e))).atualizadoEm, 12345);
+  assert.equal(P.normalizar({ ...e, atualizadoEm: 'x' }).atualizadoEm, 0);
+  assert.equal(P.normalizar({ ...e, atualizadoEm: -5 }).atualizadoEm, 0);
+});

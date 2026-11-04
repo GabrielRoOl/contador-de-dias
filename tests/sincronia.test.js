@@ -493,3 +493,61 @@ test('alarme: desativar as notificações apaga o dispositivo e a lembrança do 
   await s.alarme(alarmeX);
   assert.equal(chamadasAlarme(a).length, 1, 'sem dispositivo, nada vai à rede');
 });
+
+/* ---------- convite por link ---------- */
+test('conviteDoHash aceita o formato do servidor em qualquer caixa, com hífens, espaços ou %20, e recusa o resto', () => {
+  const ok = 'ABCD-EFGH-JKLM-NPQR-STUV';
+  assert.equal(S.conviteDoHash('#convite=' + ok), ok);
+  assert.equal(S.conviteDoHash('#convite=abcdefghjklmnpqrstuv'), ok);
+  assert.equal(S.conviteDoHash('#convite=abcd%20efgh%20jklm%20npqr%20stuv'), ok);
+  for (const ruim of ['', '#', '#pomodoro', '#convite=', '#convite=ABCD', '#convite=ABCD-EFGH-JKLM-NPQR-STUV2', '#convite=ABCD-EFGH-JKLM-NPQR-STU0',
+    '#convite=ABCD-EFGH-JKLM-NPQR-STUI', '#convite=%E0%A4%A', '#convite=<script>', '#convite=ABCD-EFGH-JKLM-NPQR-ST;V', '#x#convite=' + ok, null, undefined]) {
+    assert.equal(S.conviteDoHash(ruim), null, String(ruim));
+  }
+});
+
+test('linkConvite põe o código depois do # (que o navegador não envia ao servidor)', () => {
+  const l = S.linkConvite('https://grodev.com.br/contador/', 'ABCD-EFGH-JKLM-NPQR-STUV');
+  assert.equal(l, 'https://grodev.com.br/contador/#convite=ABCD-EFGH-JKLM-NPQR-STUV');
+  assert.equal(S.conviteDoHash(new URL(l).hash), 'ABCD-EFGH-JKLM-NPQR-STUV');
+  assert.equal(new URL(l).search, '');
+});
+
+test('convite guardado vale por 7 dias e some depois', () => {
+  let t = 1000000;
+  const a = ambiente();
+  a.env.agora = () => t;
+  const s = S.criar(a.env);
+  assert.equal(s.convitePendente(), null);
+  s.guardarConvite('ABCD-EFGH-JKLM-NPQR-STUV');
+  assert.equal(s.convitePendente(), 'ABCD-EFGH-JKLM-NPQR-STUV');
+  t += 7 * 24 * 3600 * 1000 - 1;
+  assert.equal(s.convitePendente(), 'ABCD-EFGH-JKLM-NPQR-STUV');
+  t += 2;
+  assert.equal(s.convitePendente(), null);
+  assert.equal(a.guardado['contagem-de-dias:convite'], undefined, 'o vencido é apagado');
+  a.guardado['contagem-de-dias:convite'] = '{lixo';
+  assert.equal(s.convitePendente(), null);
+});
+
+test('ativar com o convite guardado: sucesso apaga o convite e a API recebe o código no cabeçalho', async () => {
+  const a = ambiente({ semInscricao: true });
+  const s = S.criar(a.env);
+  s.guardarConvite('ABCD-EFGH-JKLM-NPQR-STUV');
+  assert.deepEqual(await s.ativar(estado, s.convitePendente()), { ok: true });
+  assert.equal(a.chamadas.find((c) => c[0] === 'POST')[4], 'ABCD-EFGH-JKLM-NPQR-STUV');
+  assert.equal(s.convitePendente(), null);
+});
+
+test('ativar com convite recusado (403) apaga o convite guardado; falha de rede mantém', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  s.guardarConvite('ABCD-EFGH-JKLM-NPQR-STUV');
+  a.srv.rede = false;
+  assert.deepEqual(await s.ativar(estado, s.convitePendente()), { ok: false, motivo: 'rede' });
+  assert.equal(s.convitePendente(), 'ABCD-EFGH-JKLM-NPQR-STUV', 'sem rede o convite continua valendo para tentar de novo');
+  a.srv.rede = true;
+  a.srv.respostas['POST ./api/dispositivos'] = { status: 403 };
+  assert.deepEqual(await s.ativar(estado, s.convitePendente()), { ok: false, motivo: 'convite-invalido' });
+  assert.equal(s.convitePendente(), null);
+});
