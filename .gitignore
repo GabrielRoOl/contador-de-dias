@@ -17,3 +17,8 @@ build/
 .idea/
 .vscode/
 .DS_Store
+
+# servidor (Kotlin)
+servidor/target/
+*.db-wal
+*.db-shm

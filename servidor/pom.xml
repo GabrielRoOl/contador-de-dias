@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>br.com.grodev</groupId>
+  <artifactId>contador</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <name>Contador de Dias (servidor)</name>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <kotlin.version>2.3.21</kotlin.version>
+    <kotlin.code.style>official</kotlin.code.style>
+    <ktor.version>3.6.1</ktor.version>
+    <jvm.target>17</jvm.target>
+  </properties>
+
+  <dependencies>
+    <dependency><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-stdlib</artifactId><version>${kotlin.version}</version></dependency>
+    <dependency><groupId>org.jetbrains.kotlinx</groupId><artifactId>kotlinx-serialization-json</artifactId><version>1.12.0</version></dependency>
+    <dependency><groupId>org.jetbrains.kotlinx</groupId><artifactId>kotlinx-coroutines-core</artifactId><version>1.11.0</version></dependency>
+    <dependency><groupId>io.ktor</groupId><artifactId>ktor-server-core-jvm</artifactId><version>${ktor.version}</version></dependency>
+    <dependency><groupId>io.ktor</groupId><artifactId>ktor-server-cio-jvm</artifactId><version>${ktor.version}</version></dependency>
+    <dependency><groupId>io.ktor</groupId><artifactId>ktor-server-content-negotiation-jvm</artifactId><version>${ktor.version}</version></dependency>
+    <dependency><groupId>io.ktor</groupId><artifactId>ktor-serialization-kotlinx-json-jvm</artifactId><version>${ktor.version}</version></dependency>
+    <dependency><groupId>io.ktor</groupId><artifactId>ktor-server-status-pages-jvm</artifactId><version>${ktor.version}</version></dependency>
+    <dependency><groupId>org.xerial</groupId><artifactId>sqlite-jdbc</artifactId><!-- fixo: as versões mais novas deixaram de trazer a biblioteca nativa de Android (Termux) --><version>3.50.3.0</version></dependency>
+    <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId><version>2.0.17</version></dependency>
+
+    <dependency><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-test-junit5</artifactId><version>${kotlin.version}</version><scope>test</scope></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.13.4</version><scope>test</scope></dependency>
+    <dependency><groupId>io.ktor</groupId><artifactId>ktor-server-test-host-jvm</artifactId><version>${ktor.version}</version><scope>test</scope></dependency>
+    <!-- só como referência nos testes: confere que a nossa criptografia de Web Push é compatível com uma implementação conhecida -->
+    <dependency><groupId>nl.martijndwars</groupId><artifactId>web-push</artifactId><version>5.1.2</version><scope>test</scope></dependency>
+    <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk15on</artifactId><version>1.70</version><scope>test</scope></dependency>
+  </dependencies>
+
+  <build>
+    <sourceDirectory>src/main/kotlin</sourceDirectory>
+    <testSourceDirectory>src/test/kotlin</testSourceDirectory>
+    <finalName>contador</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <version>${kotlin.version}</version>
+        <configuration>
+          <jvmTarget>${jvm.target}</jvmTarget>
+          <compilerPlugins><plugin>kotlinx-serialization</plugin></compilerPlugins>
+        </configuration>
+        <dependencies>
+          <dependency><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-maven-serialization</artifactId><version>${kotlin.version}</version></dependency>
+        </dependencies>
+        <executions>
+          <execution><id>compile</id><phase>compile</phase><goals><goal>compile</goal></goals></execution>
+          <execution><id>test-compile</id><phase>test-compile</phase><goals><goal>test-compile</goal></goals></execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.4</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.2</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>br.com.grodev.contador.PrincipalKt</mainClass>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>org.xerial:sqlite-jdbc</artifact>
+                  <!-- só ficam as bibliotecas nativas que usamos: Linux comum (PC) e Android/Termux (celular) -->
+                  <excludes>
+                    <exclude>org/sqlite/native/Windows/**</exclude><exclude>org/sqlite/native/Mac/**</exclude><exclude>org/sqlite/native/FreeBSD/**</exclude>
+                    <exclude>org/sqlite/native/Linux-Musl/**</exclude><exclude>org/sqlite/native/Linux/ppc64/**</exclude><exclude>org/sqlite/native/Linux/riscv64/**</exclude>
+                    <exclude>org/sqlite/native/Linux/x86/**</exclude><exclude>org/sqlite/native/Linux/arm/**</exclude><exclude>org/sqlite/native/Linux/armv6/**</exclude>
+                    <exclude>org/sqlite/native/Linux/armv7/**</exclude><exclude>org/sqlite/native/Linux/s390x/**</exclude><exclude>org/sqlite/native/Linux/loongarch64/**</exclude>
+                    <exclude>org/sqlite/native/Linux-Android/x86/**</exclude><exclude>org/sqlite/native/Linux-Android/x86_64/**</exclude>
+                  </excludes>
+                </filter>
+                <filter><artifact>*:*</artifact><excludes><exclude>META-INF/*.SF</exclude><exclude>META-INF/*.DSA</exclude><exclude>META-INF/*.RSA</exclude><exclude>META-INF/MANIFEST.MF</exclude></excludes></filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
