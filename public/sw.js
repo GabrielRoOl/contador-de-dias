@@ -1,8 +1,8 @@
 // Mude o número da versão sempre que alterar algum arquivo do app.
 const CACHE = 'contagem-de-dias-v16';
 const ARQUIVOS = [
-  './', './index.html', './app.css', './logica.js', './textos.js', './app.js', './manifest.webmanifest',
-  './icon-192.png', './icon-512.png', './icon-maskable-512.png',
+  './', './index.html', './app.css', './logica.js', './textos.js', './sincronia.js', './app.js', './manifest.webmanifest',
+  './icon-192.png', './icon-512.png', './icon-maskable-512.png', './icon-badge.png',
   './fonts/big-shoulders-display-700.woff2', './fonts/big-shoulders-display-800.woff2',
   './fonts/instrument-sans-400.woff2', './fonts/instrument-sans-600.woff2'
 ];
@@ -45,6 +45,8 @@ function daRede(req) {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // A API do servidor nunca passa pelo cache: dados velhos de lá enganariam o app.
+  if (new URL(e.request.url).pathname.indexOf('/api/') !== -1) return;
   e.respondWith((async () => {
     const tentativa = daRede(e.request);
     const limite = new Promise((_, rej) => setTimeout(() => rej(new Error('lento')), ESPERA_REDE_MS));
@@ -57,5 +59,56 @@ self.addEventListener('fetch', (e) => {
       if (guardado) { e.waitUntil(tentativa.catch(() => {})); return guardado; }
       try { return await tentativa; } catch (e2) { return (await cache.match('./index.html')) || Response.error(); }
     }
+  })());
+});
+
+/* ---------- notificações (Web Push) ---------- */
+const TITULO_PADRAO = 'Contagem de Dias';
+const CORPO_PADRAO = 'Abra o app para ver suas contagens.';
+
+// O servidor manda JSON, mas um corpo vazio ou ilegível não pode virar erro: o Chrome exige mostrar algo a cada push.
+function lerPush(data) {
+  if (!data) return {};
+  try {
+    const d = data.json();
+    return d && typeof d === 'object' ? d : {};
+  } catch (erro) {
+    try { return { corpo: data.text() }; } catch (e2) { return {}; }
+  }
+}
+
+function texto(v, max, padrao) {
+  return typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : padrao;
+}
+
+// Só endereços do próprio app: um push nunca leva o usuário para outro site.
+function urlDoApp(v) {
+  try {
+    const u = new URL(typeof v === 'string' ? v : './', self.registration.scope);
+    if (u.origin === location.origin && u.href.indexOf(self.registration.scope) === 0) return u.href;
+  } catch (erro) { /* cai no padrão */ }
+  return self.registration.scope;
+}
+
+self.addEventListener('push', (e) => {
+  const d = lerPush(e.data);
+  const tag = typeof d.tag === 'string' && /^[\w-]{1,64}$/.test(d.tag) ? d.tag : 'resumo-diario';
+  e.waitUntil(self.registration.showNotification(texto(d.titulo, 100, TITULO_PADRAO), {
+    body: texto(d.corpo, 300, CORPO_PADRAO),
+    tag,
+    renotify: true, // o resumo de hoje avisa de novo mesmo substituindo o de ontem, se ainda estiver na bandeja
+    icon: './icon-192.png',
+    badge: './icon-badge.png',
+    data: { url: urlDoApp(d.url), marco: d.marco === true }
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = urlDoApp(e.notification.data && e.notification.data.url);
+  e.waitUntil((async () => {
+    const janelas = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const aberta = janelas.find((j) => j.url.indexOf(self.registration.scope) === 0);
+    return aberta ? aberta.focus() : clients.openWindow(url);
   })());
 });
