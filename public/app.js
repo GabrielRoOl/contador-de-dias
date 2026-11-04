@@ -321,6 +321,7 @@
     dispensado: 'Sem a permissão o app não consegue avisar. Você pode tentar de novo quando quiser.',
     rede: 'Sem conexão com o servidor agora. Suas contagens continuam salvas aqui; tente de novo mais tarde.',
     limite: 'Muitas tentativas deste endereço. Tente de novo mais tarde.',
+    'servidor-cheio': 'O servidor está sem espaço agora e não aceita este aparelho. Tente de novo mais tarde.',
     'servidor-sem-push': 'O servidor não está com as notificações configuradas.',
     inscricao: 'Não consegui registrar este aparelho para as notificações. Tente de novo.',
     servidor: 'O servidor não respondeu como esperado. Tente de novo mais tarde.'

@@ -41,6 +41,17 @@
     return { endpoint: j.endpoint, keys: { p256dh: k.p256dh, auth: k.auth } };
   }
 
+  /* O que vai para o servidor: só o que o aviso diário usa. Notas e deslizes ficam só neste aparelho. */
+  function espelho(estado) {
+    if (!estado || !Array.isArray(estado.contagens)) return estado;
+    return Object.assign({}, estado, {
+      contagens: estado.contagens.map(function (c) {
+        var tent = Array.isArray(c.tentativas) ? c.tentativas.slice(0, 1).map(function (t) { return Object.assign({}, t, { nota: '' }); }) : [];
+        return Object.assign({}, c, { deslizes: [], tentativas: tent });
+      })
+    });
+  }
+
   function criar(amb) {
     var cred = null; // {id, segredo, ativo, pendente, endpoint}
     var ouvintes = [];
@@ -117,7 +128,7 @@
     function falha(motivo) { return { ok: false, motivo: motivo }; }
 
     /* Devolve {ok:true} ou {ok:false, motivo}. Motivos: nao-suportado, bloqueado, dispensado, rede, limite,
-       servidor-sem-push, inscricao. Só deve ser chamada a partir de um toque do usuário (pede a permissão). */
+       servidor-sem-push, servidor-cheio, inscricao. Só deve ser chamada a partir de um toque do usuário (pede a permissão). */
     function ativar(estado, jaRecriou) {
       if (!suportado()) return Promise.resolve(falha('nao-suportado'));
       var reg;
@@ -130,6 +141,7 @@
         if (cred) return null;
         return pedir('POST', 'dispositivos').then(function (resp) {
           if (resp.status === 429) throw falha('limite');
+          if (resp.status === 503) throw falha('servidor-cheio');
           if (resp.status !== 201 || !resp.json || !resp.json.id || !resp.json.segredo) throw falha('rede');
           cred = { id: resp.json.id, segredo: resp.json.segredo, ativo: false };
           gravar();
@@ -159,10 +171,11 @@
           if (resp.status === 503) throw falha('servidor-sem-push');
           if (resp.status !== 204) throw falha('inscricao');
           cred.endpoint = corpo.endpoint;
-          return pedir('PUT', caminhoDispositivo('/estado'), estado, { auth: true });
+          return pedir('PUT', caminhoDispositivo('/estado'), espelho(estado), { auth: true });
         });
       }).then(function (resp) {
         if (resp.status === 401) throw { recriar: true };
+        if (resp.status === 507) throw falha('servidor-cheio');
         if (resp.status !== 204) throw falha('rede');
         cred.ativo = true;
         cred.pendente = false;
@@ -212,7 +225,7 @@
       if (voando) return Promise.resolve(); // a rodada em andamento vê a versão nova e repete
       voando = true;
       var minha = versao;
-      var texto = JSON.stringify(estadoAtual);
+      var texto = JSON.stringify(espelho(estadoAtual));
       return pedir('PUT', caminhoDispositivo('/estado'), JSON.parse(texto), { auth: true, keepalive: texto.length < LIMITE_KEEPALIVE })
         .then(function (resp) {
           if (resp.status === 401) { esquecer(); return; }
@@ -262,5 +275,5 @@
     };
   }
 
-  return { criar: criar, base64UrlParaBytes: base64UrlParaBytes, bytesParaBase64Url: bytesParaBase64Url, mesmosBytes: mesmosBytes, corpoInscricao: corpoInscricao };
+  return { criar: criar, espelho: espelho, base64UrlParaBytes: base64UrlParaBytes, bytesParaBase64Url: bytesParaBase64Url, mesmosBytes: mesmosBytes, corpoInscricao: corpoInscricao };
 });

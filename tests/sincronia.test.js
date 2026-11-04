@@ -244,3 +244,44 @@ test('verificar nunca pede permissão', async () => {
   await s.verificar();
   assert.ok(!a.chamadas.some((c) => c[0] === 'permissao'));
 });
+
+const comNotas = {
+  versao: 2,
+  contagens: [{
+    id: 'a1', nome: 'Cigarro', tipo: 'parar', inicio: 1, custoDia: 5, recorde: 3, checkins: ['2026-11-01'],
+    deslizes: [{ em: 2, nota: 'NOTA_DE_DESLIZE' }],
+    tentativas: [{ inicio: 1, fim: 2, dias: 1, nota: 'NOTA_DE_RECOMECO' }, { inicio: 3, fim: 4, dias: 1, nota: 'OUTRA_NOTA' }]
+  }]
+};
+
+test('espelho: notas e deslizes não saem do aparelho, o resto segue igual', () => {
+  const e = S.espelho(comNotas);
+  const c = e.contagens[0];
+  assert.deepEqual(c.deslizes, []);
+  assert.equal(c.tentativas.length, 1);
+  assert.equal(c.tentativas[0].nota, '');
+  assert.deepEqual([c.id, c.nome, c.tipo, c.inicio, c.custoDia, c.recorde, c.checkins], ['a1', 'Cigarro', 'parar', 1, 5, 3, ['2026-11-01']]);
+  assert.ok(!JSON.stringify(e).includes('NOTA'));
+  assert.equal(comNotas.contagens[0].deslizes.length, 1, 'o estado original não é alterado');
+  assert.deepEqual(S.espelho({ versao: 2, n: 1 }), { versao: 2, n: 1 }, 'formato desconhecido passa direto');
+});
+
+test('ativar e agendar enviam o espelho, sem notas', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(comNotas);
+  const putAtivar = a.chamadas.find((c) => c[0] === 'PUT' && c[1].endsWith('/estado'));
+  assert.ok(!JSON.stringify(putAtivar[3]).includes('NOTA'));
+  a.chamadas.length = 0;
+  s.agendar(comNotas);
+  await disparar(a);
+  assert.equal(a.chamadas.length, 1);
+  assert.ok(!JSON.stringify(a.chamadas[0][3]).includes('NOTA'));
+});
+
+test('ativar: servidor sem espaço vira o motivo servidor-cheio', async () => {
+  let a = ambiente({ srv: { respostas: { 'POST ./api/dispositivos': { status: 503 } } } });
+  assert.deepEqual(await S.criar(a.env).ativar(estado), { ok: false, motivo: 'servidor-cheio' });
+  a = ambiente({ srv: { respostas: { 'PUT ./api/dispositivos/ID/estado': { status: 507 } } } });
+  assert.deepEqual(await S.criar(a.env).ativar(estado), { ok: false, motivo: 'servidor-cheio' });
+});
