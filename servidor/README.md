@@ -5,7 +5,7 @@ Kotlin + Ktor (CIO) + SQLite. Serve o app em `/contador/`, guarda o estado de ca
 ## Comandos
 
 ```bash
-mvn test                      # 179 testes (precisa de Node só para regerar as fixtures)
+mvn test                      # 200 testes (precisa de Node só para regerar as fixtures)
 mvn -DskipTests package       # gera target/contador.jar (fat jar, ~18 MB)
 java -jar target/contador.jar gerar-vapid     # imprime as chaves VAPID para o .env
 java -jar target/contador.jar gerar-admin     # imprime o ADMIN para o .env
@@ -24,6 +24,8 @@ Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor 
 | `PUT /dispositivos/{id}/estado` | sincroniza as contagens e preferências (JSON do modelo v2) |
 | `PUT /dispositivos/{id}/push` | grava a inscrição (`{endpoint, keys:{p256dh, auth}}`) |
 | `DELETE /dispositivos/{id}` | apaga tudo do dispositivo |
+| `PUT /dispositivos/{id}/alarme` | alarme do Pomodoro: `{em, fase, proxima}` (`em` = fim da fase em ms, entre 1 min atrás e 2 h à frente; fases `foco`, `pausa`, `longa`). Substitui o anterior. 409 sem inscrição de push; 120 alterações por hora por aparelho |
+| `DELETE /dispositivos/{id}/alarme` | cancela o alarme (idempotente) |
 | `GET /dispositivos/{id}/convites` | só administrador (403 para os outros): lista os convites, sem os códigos |
 | `POST /dispositivos/{id}/convites` | só administrador: `{nome}` → `{id, codigo, expiraEm}`; o código só aparece nesta resposta; no máximo 10 pendentes, 20 por hora |
 | `DELETE /dispositivos/{id}/convites/{convite}` | só administrador: revoga o convite; se já foi usado, apaga o aparelho que o usou |
@@ -42,6 +44,10 @@ As rotas com `{id}` exigem `Authorization: Bearer <segredo>`. Id desconhecido e 
 ## Agendador
 
 Roda a cada minuto. Envia para o dispositivo se já passou da `horaResumo` (no fuso dele), ainda estamos na janela de 3 h, e o dia não recebeu o aviso. O dia só conta como enviado após o sucesso; erros temporários repetem a cada 5 min (até 5 vezes); 404/410 removem a inscrição. `TTL` de 3 h e `Topic: resumo-diario`.
+
+### Alarme do Pomodoro
+
+Segunda rotina, a cada 15 s (`AgendadorAlarmes`): manda o push dos alarmes que venceram, com `tag: pomodoro`, `url: ./#pomodoro`, TTL de 2 min e sem nenhum nome de contagem. Alarme vencido há mais que o TTL é descartado sem enviar (um "acabou o foco" atrasado só atrapalha); falha repete a cada rodada, até 3 vezes; 404/410 removem a inscrição e o alarme. O app cancela o alarme ao pausar, pular, parar ou concluir a fase com a tela aberta.
 
 ## Decisões
 
