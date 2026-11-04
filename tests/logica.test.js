@@ -378,6 +378,45 @@ test.describe('carregarOuMigrar', () => {
     const s = armazenamentoFalso({ [L.CHAVE_V2]: JSON.stringify({ versao: 1, contagens: [] }) });
     assert.throws(() => L.carregarOuMigrar(s, AGORA), /corrompidos/);
   });
+  test('v2 com campo do tipo errado é recusada sem apagar nada (não vira HTML)', () => {
+    const base = { id: 'a1', nome: 'x', tipo: 'parar', inicio: 1, custoDia: null, recorde: 0, deslizes: [], tentativas: [], checkins: [] };
+    const XSS = '<img src=x onerror=alert(1)>';
+    const ruins = {
+      'id com aspas': { ...base, id: 'a" autofocus onfocus="alert(1)" x="' },
+      'id vazio': { ...base, id: '' },
+      'id enorme': { ...base, id: 'a'.repeat(65) },
+      'nome não é texto': { ...base, nome: { toString: 1 } },
+      'tipo desconhecido': { ...base, tipo: XSS },
+      'início em texto': { ...base, inicio: XSS },
+      'início infinito': { ...base, inicio: Infinity },
+      'custo em texto': { ...base, custoDia: XSS },
+      'recorde em texto': { ...base, recorde: XSS },
+      'dias da tentativa em texto': { ...base, tentativas: [{ inicio: 1, fim: 2, dias: XSS, nota: '' }] },
+      'nota da tentativa objeto': { ...base, tentativas: [{ inicio: 1, fim: 2, dias: 1, nota: {} }] },
+      'deslize sem data': { ...base, deslizes: [{ nota: 'x' }] },
+      'check-in fora do formato': { ...base, checkins: ['2026-11-03', XSS] },
+      'lista que não é lista': { ...base, checkins: XSS },
+      'contagem nula': null
+    };
+    for (const [nome, c] of Object.entries(ruins)) {
+      const bruto = JSON.stringify({ versao: 2, preferencias: {}, contagens: [c], atualizadoEm: 1 });
+      const s = armazenamentoFalso({ [L.CHAVE_V2]: bruto });
+      assert.throws(() => L.carregarOuMigrar(s, AGORA), /corrompidos/, nome);
+      assert.equal(s.dados[L.CHAVE_V2], bruto, nome + ': nada foi sobrescrito');
+    }
+  });
+  test('v2 válida passa e recebe os campos que faltavam', () => {
+    const s = armazenamentoFalso({ [L.CHAVE_V2]: JSON.stringify({ versao: 2, contagens: [{ id: 'a_1-B', nome: 'x', tipo: 'manter', inicio: 5, checkins: ['2026-11-03'] }] }) });
+    const c = L.carregarOuMigrar(s, AGORA).estado.contagens[0];
+    assert.deepEqual([c.custoDia, c.recorde, c.deslizes, c.tentativas, c.checkins], [null, 0, [], [], ['2026-11-03']]);
+  });
+  test('v1 com id estranho ganha um id seguro, sem perder datas', () => {
+    const v1estranho = JSON.stringify({ counters: [{ id: 'a" onfocus="x', name: 'n', start: 123 }, { id: '<>', name: 'm', start: 456 }] });
+    const s = armazenamentoFalso({ [L.CHAVE_V1]: v1estranho });
+    const cs = L.carregarOuMigrar(s, AGORA).estado.contagens;
+    assert.deepEqual(cs.map((c) => c.inicio), [123, 456]);
+    assert.ok(cs.every((c) => /^[A-Za-z0-9_-]{1,64}$/.test(c.id)), JSON.stringify(cs.map((c) => c.id)));
+  });
   test('v1 corrompida falha sem apagar nada', () => {
     const s = armazenamentoFalso({ [L.CHAVE_V1]: 'oi' });
     assert.throws(() => L.carregarOuMigrar(s, AGORA), /v1 corrompidos/);

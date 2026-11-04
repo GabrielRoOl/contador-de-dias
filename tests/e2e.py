@@ -291,6 +291,23 @@ try:
         check(pg3.evaluate("localStorage.getItem('contagem-de-dias:v2')") == '{quebrado', 'v2 corrompida: continua intacta após tentar criar')
         ctx3.close()
 
+        # --- estado salvo adulterado (XSS por localStorage): nada executa e nada é sobrescrito
+        agora_ms = int(time.time() * 1000)
+        base_c = {'tipo': 'parar', 'inicio': agora_ms - 3 * 86400000, 'custoDia': None, 'recorde': 0, 'deslizes': [], 'tentativas': [], 'checkins': []}
+        adulterados = {
+            'id com aspas': dict(base_c, id='a1" autofocus onfocus="window.__x=1" x="', nome='ok'),
+            'dias da tentativa em HTML': dict(base_c, id='a1', nome='ok', tentativas=[{'inicio': 1, 'fim': 2, 'dias': '<img src=x onerror=window.__x=1>', 'nota': ''}]),
+        }
+        for rotulo, contagem in adulterados.items():
+            bruto = json.dumps({'versao': 2, 'preferencias': {}, 'contagens': [contagem], 'atualizadoEm': agora_ms})
+            ctx4 = b.new_context()
+            ctx4.add_init_script("localStorage.setItem('contagem-de-dias:v2', %s)" % json.dumps(bruto))
+            pg4 = ctx4.new_page()
+            pg4.goto(URL); pg4.wait_for_selector('#list > .error'); pg4.keyboard.press('Tab'); pg4.wait_for_timeout(300)
+            check(pg4.evaluate('window.__x === 1') is False, f'estado adulterado ({rotulo}): nenhum script executa')
+            check(pg4.evaluate("localStorage.getItem('contagem-de-dias:v2')") == bruto, f'estado adulterado ({rotulo}): continua intacto')
+            ctx4.close()
+
         # --- notificações em Ajustes, sem servidor de push (o servidor estático não tem /api)
         # O Chromium headless sempre responde "denied" em Notification.permission; o teste simula o que o Chrome do celular faz.
         CONTA = ("let perm = 'default'; window.__pedidos = 0; Object.defineProperty(Notification, 'permission', { get: () => perm });"

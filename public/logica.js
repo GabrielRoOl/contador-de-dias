@@ -242,12 +242,50 @@
     return { versao: 2, preferencias: preferenciasPadrao(fuso), contagens: [], atualizadoEm: agora };
   }
 
+  var ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+  var DATA_RE = /^\d{4}-\d{2}-\d{2}$/;
+  function ehNumero(v) { return typeof v === 'number' && isFinite(v); }
+  function ehTextoOuAusente(v) { return v === undefined || typeof v === 'string'; }
+
+  /* Confere a forma do estado que veio do armazenamento (que qualquer script da mesma origem pode ter alterado).
+     Os campos que entram no HTML ou nas contas precisam ser do tipo certo; o que faltar de lista ou número é completado.
+     Qualquer outra coisa lança erro: o app abre em somente leitura e não apaga nem sobrescreve o que está salvo. */
+  function validarEstado(d) {
+    function ruim(onde) { throw new Error('Dados v2 corrompidos (' + onde + ').'); }
+    d.contagens.forEach(function (c, i) {
+      var onde = 'contagem ' + (i + 1);
+      if (!c || typeof c !== 'object' || Array.isArray(c)) ruim(onde);
+      if (typeof c.id !== 'string' || !ID_RE.test(c.id)) ruim(onde + ', id');
+      if (typeof c.nome !== 'string') ruim(onde + ', nome');
+      if (TIPOS.indexOf(c.tipo) === -1) ruim(onde + ', tipo');
+      if (!ehNumero(c.inicio)) ruim(onde + ', início');
+      if (c.custoDia === undefined) c.custoDia = null;
+      if (c.custoDia !== null && !ehNumero(c.custoDia)) ruim(onde + ', custo');
+      if (c.recorde === undefined) c.recorde = 0;
+      if (!ehNumero(c.recorde)) ruim(onde + ', recorde');
+      ['deslizes', 'tentativas', 'checkins'].forEach(function (k) {
+        if (c[k] === undefined) c[k] = [];
+        if (!Array.isArray(c[k])) ruim(onde + ', ' + k);
+      });
+      c.deslizes.forEach(function (x) {
+        if (!x || typeof x !== 'object' || !ehNumero(x.em) || !ehTextoOuAusente(x.nota)) ruim(onde + ', deslize');
+      });
+      c.tentativas.forEach(function (x) {
+        if (!x || typeof x !== 'object' || !ehNumero(x.inicio) || !ehNumero(x.fim) || !ehNumero(x.dias) || !ehTextoOuAusente(x.nota)) ruim(onde + ', tentativa');
+      });
+      c.checkins.forEach(function (x) { if (typeof x !== 'string' || !DATA_RE.test(x)) ruim(onde + ', check-in'); });
+    });
+    if (d.atualizadoEm !== undefined && !ehNumero(d.atualizadoEm)) ruim('atualizadoEm');
+    return d;
+  }
+
   /* v1: { counters: [{ id, name, start, best }], updatedAt }. Não perde nenhuma data. */
   function migrarV1(v1, agora, fuso) {
     if (!v1 || !Array.isArray(v1.counters)) throw new Error('Dados v1 inválidos.');
-    var contagens = v1.counters.map(function (c) {
+    var contagens = v1.counters.map(function (c, i) {
       if (!c || typeof c.start !== 'number' || !isFinite(c.start) || !c.id) throw new Error('Contagem v1 inválida: ' + JSON.stringify(c));
-      return { id: c.id, nome: c.name, tipo: 'parar', inicio: c.start, custoDia: null, recorde: c.best || 0, deslizes: [], tentativas: [], checkins: [] };
+      var id = String(c.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || ('c' + (i + 1));
+      return { id: id, nome: String(c.name === undefined || c.name === null ? '' : c.name), tipo: 'parar', inicio: c.start, custoDia: null, recorde: c.best || 0, deslizes: [], tentativas: [], checkins: [] };
     });
     return { versao: 2, preferencias: preferenciasPadrao(fuso), contagens: contagens, atualizadoEm: v1.updatedAt || agora };
   }
@@ -261,6 +299,7 @@
       var d;
       try { d = JSON.parse(raw2); } catch (e) { throw new Error('Dados v2 corrompidos.'); }
       if (!d || d.versao !== 2 || !Array.isArray(d.contagens)) throw new Error('Dados v2 corrompidos.');
+      validarEstado(d);
       d.preferencias = normalizarPreferencias(d.preferencias, fuso);
       return { estado: d, origem: 'v2' };
     }
@@ -268,7 +307,7 @@
     if (raw1 === null || raw1 === undefined) return { estado: estadoVazio(agora, fuso), origem: 'novo' };
     var v1;
     try { v1 = JSON.parse(raw1); } catch (e) { throw new Error('Dados v1 corrompidos.'); }
-    var estado = migrarV1(v1, agora, fuso);
+    var estado = validarEstado(migrarV1(v1, agora, fuso));
     var texto = JSON.stringify(estado);
     armazenamento.setItem(CHAVE_V2, texto);
     if (armazenamento.getItem(CHAVE_V2) !== texto) throw new Error('Não foi possível gravar os dados v2.');
@@ -290,7 +329,7 @@
     sequenciaCheckins: sequenciaCheckins, maiorSequencia: maiorSequencia, registrarCheckin: registrarCheckin,
     desfazerCheckin: desfazerCheckin, cicloManter: cicloManter, ordinalParaMs: ordinalParaMs,
     criarContagem: criarContagem, atualizarContagem: atualizarContagem, registrarDeslize: registrarDeslize, recomecar: recomecar, estatisticasParar: estatisticasParar,
-    preferenciasPadrao: preferenciasPadrao, normalizarPreferencias: normalizarPreferencias, estadoVazio: estadoVazio, migrarV1: migrarV1,
+    preferenciasPadrao: preferenciasPadrao, normalizarPreferencias: normalizarPreferencias, estadoVazio: estadoVazio, migrarV1: migrarV1, validarEstado: validarEstado,
     carregarOuMigrar: carregarOuMigrar, salvar: salvar
   };
 });

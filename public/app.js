@@ -121,7 +121,7 @@
     return '<span class="num' + (d >= 4 ? ' d4' : d === 3 ? ' d3' : '') + '">' + n + '</span>';
   }
 
-  function statHTML(rotulo, valor) { return '<div><dt>' + rotulo + '</dt><dd>' + valor + '</dd></div>'; }
+  function statHTML(rotulo, valor) { return '<div><dt>' + rotulo + '</dt><dd>' + esc(valor) + '</dd></div>'; }
 
   function liveParar(c, agora) {
     var t = L.calcular(c.inicio, agora);
@@ -166,9 +166,9 @@
   function painelAtivo(c, tipo) { return ui.painel && ui.painel.id === c.id && ui.painel.tipo === tipo; }
 
   function formDeslize(c) {
-    return '<form class="editform" data-form="deslize" data-id="' + c.id + '" novalidate>' +
+    return '<form class="editform" data-form="deslize" data-id="' + esc(c.id) + '" novalidate>' +
       '<p class="hint">Um deslize não zera a sua contagem. Só fica registrado.</p>' +
-      '<div class="field"><label for="ds-' + c.id + '">O que aconteceu? (opcional)</label><input id="ds-' + c.id + '" type="text" maxlength="200" autocomplete="off"></div>' +
+      '<div class="field"><label for="ds-' + esc(c.id) + '">O que aconteceu? (opcional)</label><input id="ds-' + esc(c.id) + '" type="text" maxlength="200" autocomplete="off"></div>' +
       '<div class="actions"><button class="btn small primary" type="submit">Registrar</button>' +
       '<button class="btn small" type="button" data-act="fechar">Cancelar</button></div></form>';
   }
@@ -177,35 +177,35 @@
     var agora = Date.now();
     var dias = L.calcular(c.inicio, agora).dias;
     var recorde = Math.max(c.recorde || 0, dias);
-    return '<form class="editform" data-form="recomeco" data-id="' + c.id + '" novalidate>' +
+    return '<form class="editform" data-form="recomeco" data-id="' + esc(c.id) + '" novalidate>' +
       '<p class="hint">Recomeçar faz parte. ' + esc(T.avisoRecomeco(dias, c.recorde || 0)) + '</p>' +
       '<fieldset class="radios"><legend class="sr">Quando você recomeçou</legend>' +
-      '<label><input type="radio" name="rq-' + c.id + '" value="agora" checked><span>Agora</span></label>' +
-      '<label><input type="radio" name="rq-' + c.id + '" value="ontem"><span>Ontem</span></label>' +
-      '<label><input type="radio" name="rq-' + c.id + '" value="outro"><span>Outro momento</span></label></fieldset>' +
-      '<div class="row2" data-outro hidden><div class="field"><label for="rd-' + c.id + '">Data</label><input id="rd-' + c.id + '" type="date" max="' + hoje() + '" value="' + hoje() + '"></div>' +
-      '<div class="field"><label for="rh-' + c.id + '">Hora</label><input id="rh-' + c.id + '" type="time" value="' + toTimeInput(agora) + '"></div></div>' +
-      '<div class="field"><label for="rn-' + c.id + '">O que pesou? (opcional)</label><input id="rn-' + c.id + '" type="text" maxlength="200" autocomplete="off"></div>' +
-      '<p class="error" id="re-' + c.id + '" role="alert"></p>' +
+      '<label><input type="radio" name="rq-' + esc(c.id) + '" value="agora" checked><span>Agora</span></label>' +
+      '<label><input type="radio" name="rq-' + esc(c.id) + '" value="ontem"><span>Ontem</span></label>' +
+      '<label><input type="radio" name="rq-' + esc(c.id) + '" value="outro"><span>Outro momento</span></label></fieldset>' +
+      '<div class="row2" data-outro hidden><div class="field"><label for="rd-' + esc(c.id) + '">Data</label><input id="rd-' + esc(c.id) + '" type="date" max="' + hoje() + '" value="' + hoje() + '"></div>' +
+      '<div class="field"><label for="rh-' + esc(c.id) + '">Hora</label><input id="rh-' + esc(c.id) + '" type="time" value="' + toTimeInput(agora) + '"></div></div>' +
+      '<div class="field"><label for="rn-' + esc(c.id) + '">O que pesou? (opcional)</label><input id="rn-' + esc(c.id) + '" type="text" maxlength="200" autocomplete="off"></div>' +
+      '<p class="error" id="re-' + esc(c.id) + '" role="alert"></p>' +
       '<div class="actions"><button class="btn small primary" type="submit">Recomeçar</button>' +
       '<button class="btn small" type="button" data-act="fechar">Cancelar</button></div></form>';
   }
 
   function formEditar(c) {
     var parar = c.tipo === 'parar';
-    return '<form class="editform" data-form="editar" data-id="' + c.id + '" novalidate>' +
-      '<div class="field"><label for="en-' + c.id + '">Nome</label><input id="en-' + c.id + '" type="text" maxlength="60" value="' + esc(c.nome) + '"></div>' +
-      (parar ? '<div class="row2"><div class="field"><label for="ed-' + c.id + '">Data de início</label><input id="ed-' + c.id + '" type="date" max="' + hoje() + '" value="' + L.dataLocal(c.inicio) + '"></div>' +
-        '<div class="field"><label for="et-' + c.id + '">Hora</label><input id="et-' + c.id + '" type="time" value="' + toTimeInput(c.inicio) + '"></div></div>' +
-        '<div class="field"><label for="ec-' + c.id + '">Custo por dia (opcional)</label><input id="ec-' + c.id + '" type="text" inputmode="decimal" value="' + (c.custoDia ? String(c.custoDia).replace('.', ',') : '') + '"></div>' : '') +
-      '<p class="error" id="ee-' + c.id + '" role="alert"></p>' +
+    return '<form class="editform" data-form="editar" data-id="' + esc(c.id) + '" novalidate>' +
+      '<div class="field"><label for="en-' + esc(c.id) + '">Nome</label><input id="en-' + esc(c.id) + '" type="text" maxlength="60" value="' + esc(c.nome) + '"></div>' +
+      (parar ? '<div class="row2"><div class="field"><label for="ed-' + esc(c.id) + '">Data de início</label><input id="ed-' + esc(c.id) + '" type="date" max="' + hoje() + '" value="' + L.dataLocal(c.inicio) + '"></div>' +
+        '<div class="field"><label for="et-' + esc(c.id) + '">Hora</label><input id="et-' + esc(c.id) + '" type="time" value="' + toTimeInput(c.inicio) + '"></div></div>' +
+        '<div class="field"><label for="ec-' + esc(c.id) + '">Custo por dia (opcional)</label><input id="ec-' + esc(c.id) + '" type="text" inputmode="decimal" value="' + (c.custoDia ? String(c.custoDia).replace('.', ',') : '') + '"></div>' : '') +
+      '<p class="error" id="ee-' + esc(c.id) + '" role="alert"></p>' +
       '<div class="actions"><button class="btn small primary" type="submit">Salvar</button>' +
       '<button class="btn small" type="button" data-act="fechar">Cancelar</button></div></form>';
   }
 
   function confirmarExcluir(c) {
     return '<div class="confirm"><p>Excluir &ldquo;' + esc(c.nome) + '&rdquo;? Isso não pode ser desfeito.</p>' +
-      '<div class="actions"><button class="btn small danger" type="button" data-act="do-delete" data-id="' + c.id + '">Excluir</button>' +
+      '<div class="actions"><button class="btn small danger" type="button" data-act="do-delete" data-id="' + esc(c.id) + '">Excluir</button>' +
       '<button class="btn small" type="button" data-act="fechar">Cancelar</button></div></div>';
   }
 
@@ -219,17 +219,17 @@
     if (c.tipo === 'manter') {
       var feito = c.checkins.indexOf(hoje()) !== -1;
       html += feito
-        ? '<div class="confirm"><p class="checkin-feito">Feito hoje.</p><div class="actions"><button class="btn small" type="button" data-act="desfazer-checkin" data-id="' + c.id + '">Desfazer</button></div></div>'
-        : '<button class="btn primary big" type="button" data-act="checkin" data-id="' + c.id + '">Hoje eu fiz</button>';
-      return html + '<div class="actions"><button class="btn small" type="button" data-act="painel" data-tipo="editar" data-id="' + c.id + '">Editar</button>' +
-        '<button class="btn small danger" type="button" data-act="painel" data-tipo="excluir" data-id="' + c.id + '">Excluir</button></div>';
+        ? '<div class="confirm"><p class="checkin-feito">Feito hoje.</p><div class="actions"><button class="btn small" type="button" data-act="desfazer-checkin" data-id="' + esc(c.id) + '">Desfazer</button></div></div>'
+        : '<button class="btn primary big" type="button" data-act="checkin" data-id="' + esc(c.id) + '">Hoje eu fiz</button>';
+      return html + '<div class="actions"><button class="btn small" type="button" data-act="painel" data-tipo="editar" data-id="' + esc(c.id) + '">Editar</button>' +
+        '<button class="btn small danger" type="button" data-act="painel" data-tipo="excluir" data-id="' + esc(c.id) + '">Excluir</button></div>';
     }
     return '<div class="actions">' +
-      '<button class="btn small" type="button" data-act="painel" data-tipo="deslize" data-id="' + c.id + '">Deslize</button>' +
-      '<button class="btn small" type="button" data-act="painel" data-tipo="recomeco" data-id="' + c.id + '">Recomecei</button>' +
-      '<button class="btn small" type="button" data-act="historico" data-id="' + c.id + '" aria-expanded="' + (ui.historico[c.id] ? 'true' : 'false') + '">Histórico</button>' +
-      '<button class="btn small" type="button" data-act="painel" data-tipo="editar" data-id="' + c.id + '">Editar</button>' +
-      '<button class="btn small danger" type="button" data-act="painel" data-tipo="excluir" data-id="' + c.id + '">Excluir</button></div>';
+      '<button class="btn small" type="button" data-act="painel" data-tipo="deslize" data-id="' + esc(c.id) + '">Deslize</button>' +
+      '<button class="btn small" type="button" data-act="painel" data-tipo="recomeco" data-id="' + esc(c.id) + '">Recomecei</button>' +
+      '<button class="btn small" type="button" data-act="historico" data-id="' + esc(c.id) + '" aria-expanded="' + (ui.historico[c.id] ? 'true' : 'false') + '">Histórico</button>' +
+      '<button class="btn small" type="button" data-act="painel" data-tipo="editar" data-id="' + esc(c.id) + '">Editar</button>' +
+      '<button class="btn small danger" type="button" data-act="painel" data-tipo="excluir" data-id="' + esc(c.id) + '">Excluir</button></div>';
   }
 
   function historicoHTML(c) {
@@ -246,7 +246,7 @@
 
   function cardHTML(c, exemplo) {
     var desde = c.tipo === 'manter' ? 'Desde ' + fmtData.format(new Date(c.inicio)) : 'Desde ' + fmtDataHora.format(new Date(c.inicio));
-    var corpo = '<div class="live"' + (exemplo ? ' data-exemplo="1"' : ' data-id="' + c.id + '"') + '>' + liveHTML(c, Date.now()) + '</div>';
+    var corpo = '<div class="live"' + (exemplo ? ' data-exemplo="1"' : ' data-id="' + esc(c.id) + '"') + '>' + liveHTML(c, Date.now()) + '</div>';
     if (!exemplo) {
       corpo += acoesHTML(c);
       if (c.tipo === 'parar' && ui.historico[c.id]) corpo += historicoHTML(c);
