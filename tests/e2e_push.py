@@ -132,10 +132,14 @@ def novo_contexto(b, resposta=None):
     return ctx
 
 
+VIOLACOES_CSP = []
+
+
 def abrir(ctx):
     pg = ctx.new_page()
     erros = []
     pg.on('pageerror', lambda e: erros.append(str(e)))
+    pg.on('console', lambda m: VIOLACOES_CSP.append(m.text) if 'Content Security Policy' in m.text else None)
     pg.goto(BASE)
     pg.wait_for_selector('.card.example, .card')
     pg.evaluate('navigator.serviceWorker.ready')
@@ -206,6 +210,18 @@ try:
         check(linha[0][4] == horaA, f'horário do resumo no servidor ({linha[0][4]}) = o do app ({horaA})')
         check(linha[0][5] == pg.evaluate('Intl.DateTimeFormat().resolvedOptions().timeZone'), 'fuso do aparelho no servidor')
         check(json.loads(pg.evaluate("localStorage.getItem('contagem-de-dias:push')")).get('pendente') is False, 'nada pendente depois de sincronizar')
+
+        # --- CSP: o app inteiro funciona sob a política e um script injetado é recusado
+        csp = urllib.request.urlopen(BASE).headers.get('Content-Security-Policy') or ''
+        check("script-src 'self' 'sha256-" in csp and 'unsafe' not in csp and "object-src 'none'" in csp, 'o servidor envia a CSP com o hash do script do tema')
+        check(VIOLACOES_CSP == [], f'CSP: o app em si (scripts, estilos, fontes, API, service worker) não gera nenhuma violação {VIOLACOES_CSP[:2]}')
+        pg.evaluate("""() => { const s = document.createElement('script'); s.textContent = 'window.__injetado = 1'; document.head.appendChild(s); }""")
+        pg.wait_for_timeout(200)
+        check(pg.evaluate('window.__injetado === undefined'), 'CSP: script injetado no DOM não executa')
+        pg.evaluate("""() => { const i = document.createElement('img'); i.src = 'x'; i.setAttribute('onerror', 'window.__handler = 1'); document.body.appendChild(i); }""")
+        pg.wait_for_timeout(200)
+        check(pg.evaluate('window.__handler === undefined'), 'CSP: handler onerror= injetado não executa')
+        pg.evaluate("document.querySelectorAll('img[onerror]').forEach(e => e.remove())")
 
         # --- espelho contínuo, com debounce
         pg.keyboard.press('Escape')

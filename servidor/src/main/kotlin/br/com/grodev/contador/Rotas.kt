@@ -34,6 +34,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
+import java.io.File
+import java.security.MessageDigest
 
 @Serializable data class RespostaDispositivo(val id: String, val segredo: String)
 @Serializable data class RespostaChavePublica(val chave: String)
@@ -50,12 +52,47 @@ const val LIMITE_CRIACAO_POR_HORA = 5
 private val json = Json { ignoreUnknownKeys = true }
 private val log = LoggerFactory.getLogger("rotas")
 
+/**
+ * Content-Security-Policy do app. O único script embutido do index.html (aplica o tema antes de pintar) entra pelo hash
+ * do conteúdo, recalculado quando o arquivo muda; o resto só roda se vier do próprio site. Se alguém conseguir injetar
+ * HTML, o navegador recusa o script injetado, o estilo embutido, e conexões e formulários para outros sites.
+ */
+internal class PoliticaCsp(private val pasta: File?) {
+    private var modificado = Long.MIN_VALUE
+    private var atual = montar(emptyList())
+
+    @Synchronized fun valor(): String {
+        val index = pasta?.resolve("index.html")?.takeIf { it.isFile }
+        val mod = index?.lastModified() ?: -1L
+        if (mod != modificado) { atual = montar(hashesDeScriptsEmbutidos(index?.readText() ?: "")); modificado = mod }
+        return atual
+    }
+
+    companion object {
+        private val SCRIPT_EMBUTIDO = Regex("<script(?![^>]*\\bsrc\\s*=)[^>]*>(.*?)</script>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+
+        fun hashesDeScriptsEmbutidos(html: String): List<String> = SCRIPT_EMBUTIDO.findAll(html).map { m ->
+            "'sha256-" + java.util.Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-256").digest(m.groupValues[1].toByteArray())) + "'"
+        }.toList()
+
+        fun montar(hashes: List<String>) = listOf(
+            "default-src 'self'", "script-src " + (listOf("'self'") + hashes).joinToString(" "), "style-src 'self'", "img-src 'self'",
+            "font-src 'self'", "connect-src 'self'", "manifest-src 'self'", "worker-src 'self'", "object-src 'none'",
+            "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
+        ).joinToString("; ")
+    }
+}
+
 /** Cabeçalhos de segurança e de cache: nada é guardado pelo navegador sem revalidar (evita arquivos velhos). */
-private val CabecalhosPadrao = createApplicationPlugin("CabecalhosPadrao") {
+private fun cabecalhosPadrao(csp: PoliticaCsp) = createApplicationPlugin("CabecalhosPadrao") {
     onCallRespond { call, _ ->
         call.response.header("X-Content-Type-Options", "nosniff")
         call.response.header("Referrer-Policy", "no-referrer")
         call.response.header("X-Frame-Options", "DENY")
+        call.response.header("Content-Security-Policy", csp.valor())
+        call.response.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()")
+        call.response.header("Cross-Origin-Opener-Policy", "same-origin")
+        call.response.header("Cross-Origin-Resource-Policy", "same-origin")
         val api = call.request.path().startsWith("$PREFIXO/api")
         call.response.header(HttpHeaders.CacheControl, if (api) "no-store" else "no-cache")
     }
@@ -93,7 +130,7 @@ fun Application.modulo(
     limiteGeral: LimitadorTaxa = LimitadorTaxa(240, 60_000, relogio),
     limiteCriacao: LimitadorTaxa = LimitadorTaxa(LIMITE_CRIACAO_POR_HORA, 3_600_000, relogio),
 ) {
-    install(CabecalhosPadrao)
+    install(cabecalhosPadrao(PoliticaCsp(config.pastaEstatica)))
     install(ContentNegotiation) { json(Json { encodeDefaults = true }) }
     install(StatusPages) {
         exception<Throwable> { call, e ->

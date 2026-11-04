@@ -369,4 +369,57 @@ class RotasTest {
         while (banco.bytesTotais() < 3_000) banco.salvarEstado(id2, "x".repeat(3_000), "UTC", "09:00", agora)
         assertEquals(HttpStatusCode.ServiceUnavailable, c.post("/contador/api/dispositivos").status)
     }
+
+    // ---------------------------------------------------------------- CSP e cabeçalhos de defesa
+
+    private fun sha256B64(t: String) = java.util.Base64.getEncoder().encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(t.toByteArray()))
+
+    @Test fun `CSP com o hash do único script embutido, sem unsafe-inline, em tudo que o servidor responde`() {
+        val inline = "try{document.documentElement.dataset.x=1}catch(e){}"
+        File(pasta, "index.html").writeText("<html><head><script>$inline</script><script src=\"app.js\"></script></head></html>")
+        comApp { c ->
+            listOf("/contador/", "/contador/app.js", "/contador/sw.js", "/contador/api/saude", "/contador/nao-existe").forEach { caminho ->
+                val csp = c.get(caminho).headers["Content-Security-Policy"]
+                assertNotNull(csp, caminho)
+                assertTrue("script-src 'self' 'sha256-${sha256B64(inline)}'" in csp, "$caminho: $csp")
+                assertFalse("unsafe" in csp, csp)
+                listOf("default-src 'self'", "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "form-action 'self'", "connect-src 'self'", "style-src 'self'").forEach {
+                    assertTrue(it in csp, "$caminho sem $it")
+                }
+                assertEquals(1, Regex("sha256-").findAll(csp).count(), "o script com src= não ganha hash")
+            }
+        }
+    }
+
+    @Test fun `o hash da CSP acompanha o index que mudou`() = comApp { c ->
+        File(pasta, "index.html").writeText("<script>a()</script>")
+        val a = c.get("/contador/").headers["Content-Security-Policy"]!!
+        assertTrue(sha256B64("a()") in a)
+        File(pasta, "index.html").apply { writeText("<script>b()</script>"); setLastModified(lastModified() + 5_000) }
+        val b = c.get("/contador/").headers["Content-Security-Policy"]!!
+        assertTrue(sha256B64("b()") in b && sha256B64("a()") !in b, b)
+    }
+
+    @Test fun `sem index ou sem script embutido a CSP não abre nenhuma exceção`() = comApp { c ->
+        File(pasta, "index.html").delete()
+        val csp = c.get("/contador/api/saude").headers["Content-Security-Policy"]!!
+        assertTrue("script-src 'self';" in csp, csp)
+    }
+
+    @Test fun `outros cabeçalhos de defesa em profundidade`() = comApp { c ->
+        val h = c.get("/contador/api/saude").headers
+        assertEquals("same-origin", h["Cross-Origin-Opener-Policy"])
+        assertEquals("same-origin", h["Cross-Origin-Resource-Policy"])
+        assertTrue(h["Permissions-Policy"]!!.let { "camera=()" in it && "microphone=()" in it && "geolocation=()" in it })
+    }
+
+    @Test fun `o index real do app tem um único script embutido e nenhum handler ou estilo embutido`() {
+        val index = File("../public/index.html").takeIf { it.isFile } ?: return
+        val html = index.readText()
+        assertEquals(1, PoliticaCsp.hashesDeScriptsEmbutidos(html).size, "um script embutido (o do tema); mais um exigiria outro hash")
+        assertFalse(Regex("\\son[a-z]+\\s*=", RegexOption.IGNORE_CASE).containsMatchIn(html), "handler onclick= etc. é bloqueado pela CSP")
+        assertFalse(Regex("\\sstyle\\s*=", RegexOption.IGNORE_CASE).containsMatchIn(html), "style= embutido é bloqueado pela CSP")
+        val app = File("../public/app.js").takeIf { it.isFile }?.readText() ?: return
+        assertFalse(Regex("style=|\\.setAttribute\\('style'|insertAdjacentHTML", RegexOption.IGNORE_CASE).containsMatchIn(app), "app.js não pode montar style= nem HTML por fora do esc()")
+    }
 }

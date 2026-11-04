@@ -32,7 +32,7 @@ As três últimas exigem `Authorization: Bearer <segredo>`. Id desconhecido e se
 - Corpo limitado (256 KB), validação de tudo que chega, SQL parametrizado. Limite por IP: 240 req/min na API e 5 dispositivos novos por hora; IPv6 conta por bloco /64. O IP real vem do `CF-Connecting-IP`, só aceito quando a conexão vem de 127.0.0.1 e só se for mesmo um IP.
 - Cota: `MAX_DISPOSITIVOS` (10 000) e `MAX_BYTES_MB` (200, soma dos estados guardados). Dispositivos que nunca foram usados (1 dia) ou ficam sem inscrição de push e parados (14 dias) são apagados.
 - O servidor guarda só o que o aviso usa: notas, deslizes e o detalhe do histórico não são guardados.
-- Arquivos do app com `Cache-Control: no-cache` e cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`.
+- Arquivos do app com `Cache-Control: no-cache` e cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, COOP/CORP e **CSP** (só scripts do próprio site; o script do tema entra pelo hash, recalculado quando o `index.html` muda). Não pode haver `style=`, `onclick=` nem outro `<script>` embutido no `index.html`: `RotasTest` e `tests/e2e_push.py` conferem.
 - Dispositivos sem sincronizar há 365 dias são apagados (LGPD). Apagar é de verdade: `secure_delete` e checkpoint do WAL (o texto não fica no arquivo do banco). Logs não trazem segredos nem endpoints.
 
 ## Agendador
