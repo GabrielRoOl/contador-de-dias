@@ -31,6 +31,15 @@ Abra `http://localhost:8000`. O service worker funciona em `localhost`.
 
 Rode `node scripts/versao.js`. Ele sobe o número do cache em `public/sw.js` e o `?v=` de CSS e JS no `index.html`, para o navegador baixar tudo novo de uma vez (sem misturar HTML novo com JS antigo). Se criar um arquivo novo, inclua-o na lista `ARQUIVOS` do `sw.js`. Depois de uma atualização, o celular pode precisar de uma recarga extra para trocar o service worker antigo.
 
+## Implantar no celular
+
+```bash
+scripts/implantar.sh            # compila, copia jar e public/ e reinicia (celular-wifi, em casa)
+scripts/implantar.sh celular    # fora de casa
+```
+
+Precisa do apelido ssh configurado e do servidor já instalado em `~/contador` (veja `servidor/README.md`). Antes, rode `node scripts/versao.js` se mudou algo em `public/`; o script recusa seguir com a versão fora de sincronia.
+
 ## Testes
 
 ```bash
