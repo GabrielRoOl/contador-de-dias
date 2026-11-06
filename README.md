@@ -158,7 +158,33 @@ scripts/verificar-boot.sh            # celular-wifi; ou: scripts/verificar-boot.
 
 Ele diz `BOOT OK` quando o log de boot é recente e o servidor responde.
 
-## Aviso por e-mail quando o servidor cair
+## Monitoramento
+
+O servidor roda num celular, então a pergunta "ele está de pé?" precisa de mais de uma resposta. Cada camada cobre uma falha diferente:
+
+| Camada | Onde roda | Cobre | Como avisa |
+|---|---|---|---|
+| Laço de reinício | no celular (`contador.sh`, dentro do tmux) | o processo Java morrer | reinicia sozinho em 5 s; o log fica em `~/logs/contador.log` |
+| Subir no boot | no celular (Termux:Boot, `scripts/termux/30-contador`) | o celular reiniciar | sobe o servidor sozinho; `scripts/verificar-boot.sh` prova que funcionou |
+| Monitor do PC | no computador (`scripts/monitor.py`, timer do systemd, a cada 5 min) | celular desligado, sem internet, túnel caído, URL fora do ar | e-mail para várias pessoas |
+| Monitor externo | serviço gratuito de monitoramento (por exemplo UptimeRobot) | tudo isso, 24 horas, mesmo com o PC desligado | e-mail da conta |
+| Testes de ponta a ponta | no computador (`tests/e2e_push.py`) | regressões antes de implantar | falha o teste |
+
+Por que duas camadas externas: o monitor do PC é meu e avisa várias caixas, mas só enquanto o computador está ligado; o serviço externo vigia sempre, mas no plano gratuito avisa só o e-mail da conta. Juntos cobrem as duas lacunas.
+
+O que cada checagem olha: `GET /contador/api/saude` pela **URL pública**, passando pelo túnel, e não por dentro do celular. Assim ela só dá "ok" se o caminho inteiro (celular, servidor, túnel e domínio) estiver funcionando, que é o caminho que o app usa.
+
+Alguns cuidados do monitor do PC, para o aviso valer a pena:
+- Só alerta depois de **2 falhas seguidas** (10 min). Uma falha isolada de rede não vira e-mail.
+- Se o próprio computador estiver sem internet, a rodada é **ignorada**: não dá para culpar o servidor.
+- Alertas **não se repetem** a cada rodada: um e-mail na queda, um lembrete a cada 6 h e um aviso quando volta, com o tempo que ficou fora.
+- Se o envio do e-mail falhar, o estado não conta como avisado e a próxima rodada **tenta de novo**.
+- O e-mail diz **o que olhar, em ordem** (celular, `contador.sh status`, log, túnel, reinício), então dá para agir sem lembrar de nada.
+- Os endereços e a senha ficam em `~/.config/contador-monitor/config.env`, **fora do git**. O repositório só tem um arquivo de exemplo.
+
+O que o monitor ainda **não** vê: o servidor responder `ok` mas as notificações não chegarem (por exemplo, o serviço de push recusando). Para isso o servidor registra no log cada falha de envio, e o teste de ponta a ponta cobre o fluxo.
+
+### Configurar o monitor do PC
 
 `scripts/monitor.py` confere `/contador/api/saude` pela URL pública a cada 5 minutos e manda e-mail quando o servidor para de responder, um lembrete a cada 6 h enquanto continuar fora e um aviso quando volta. Só avisa depois de 2 falhas seguidas e ignora a rodada se o computador que vigia estiver sem internet. Usa só a biblioteca padrão do Python.
 
