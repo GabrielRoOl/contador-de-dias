@@ -1,0 +1,11 @@
+# Copie para ~/.config/contador-monitor/config.env (chmod 600). Este arquivo NÃO vai para o git.
+# Quem recebe os avisos (separe por vírgula):
+ALERTA_PARA=voce@exemplo.com,outro@exemplo.com
+
+# Conta que envia. Gmail: precisa de verificação em duas etapas e de uma "senha de app" (16 letras),
+# criada em https://myaccount.google.com/apppasswords. Nunca use a senha normal da conta.
+SMTP_HOST=smtp.gmail.com
+SMTP_PORTA=465
+SMTP_SEGURANCA=ssl
+SMTP_USUARIO=conta-que-envia@gmail.com
+SMTP_SENHA=senha-de-app-aqui

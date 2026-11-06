@@ -1,0 +1,6 @@
+[Unit]
+Description=Confere se o Contador de Dias responde e avisa por e-mail se cair
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/Documentos/gabriel/programas/contador-de-dias/scripts/monitor.py

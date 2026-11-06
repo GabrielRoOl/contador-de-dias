@@ -104,8 +104,10 @@ scripts/
   versao.js             sobe a versão do cache e do ?v= dos arquivos
   implantar.sh          compila, copia para o celular e reinicia
   verificar-boot.sh     confere, depois de reiniciar o celular, se o Termux:Boot subiu o servidor
+  monitor.py            vigia a URL pública e avisa por e-mail quando o servidor cai e quando volta
   termux/30-contador    script do Termux:Boot (fica em ~/.termux/boot/ no celular)
   capturas.py           gera as imagens deste README
+  systemd/              timers do systemd do usuário (monitor e envio gradual)
   fixtures.js, icones.py
 tests/                  unitários, ponta a ponta e de versão
 docs/img/               imagens do README
@@ -155,3 +157,20 @@ scripts/verificar-boot.sh            # celular-wifi; ou: scripts/verificar-boot.
 ```
 
 Ele diz `BOOT OK` quando o log de boot é recente e o servidor responde.
+
+## Aviso por e-mail quando o servidor cair
+
+`scripts/monitor.py` confere `/contador/api/saude` pela URL pública a cada 5 minutos e manda e-mail quando o servidor para de responder, um lembrete a cada 6 h enquanto continuar fora e um aviso quando volta. Só avisa depois de 2 falhas seguidas e ignora a rodada se o computador que vigia estiver sem internet. Usa só a biblioteca padrão do Python.
+
+Limite: ele só vigia enquanto o computador onde roda estiver ligado. Para vigiar 24 horas, use também um serviço externo de monitoramento.
+
+1. Copie `scripts/systemd/contador-monitor.config.exemplo` para `~/.config/contador-monitor/config.env` (`chmod 600`) e preencha os destinatários e a conta que envia. No Gmail é preciso uma *senha de app* (verificação em duas etapas ligada, em `myaccount.google.com/apppasswords`); nunca a senha normal. Esse arquivo fica fora do repositório.
+2. Teste o envio: `scripts/monitor.py --testar-email`.
+3. Ligue o timer:
+
+```bash
+cp scripts/systemd/contador-monitor.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now contador-monitor.timer
+```
+
+Testes: `python3 tests/monitor_test.py` (rede e e-mail simulados).
