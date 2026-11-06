@@ -133,6 +133,62 @@
     return pad(Math.floor(s / 60)) + ':' + pad(s % 60);
   }
 
+  /* ---------- estatísticas (sobre os dias guardados, no máximo MAX_DIAS) ---------- */
+
+  /* "2026-11-05" menos n dias, no calendário local (meio-dia para o horário de verão não atrapalhar). */
+  function diaMenos(dia, n) {
+    var p = dia.split('-');
+    return dataLocal(new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) - n, 12).getTime());
+  }
+  function diaDaSemana(dia) {
+    var p = dia.split('-');
+    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 12).getDay();
+  }
+  /* Tudo que a janela de estatísticas mostra. `hoje` é "YYYY-MM-DD". Devolve null se ainda não há nenhum pomodoro. */
+  function estatisticas(e, hoje) {
+    var dias = e.dias;
+    var ativos = Object.keys(dias).filter(function (d) { return dias[d] > 0; }).sort();
+    if (!ativos.length) return null;
+    var tot = total(e);
+
+    var ultimos7 = [], semana = 0, anterior = 0, i;
+    for (i = 6; i >= 0; i--) { var d = diaMenos(hoje, i); var n = dias[d] || 0; ultimos7.push({ dia: d, n: n, semana: diaDaSemana(d) }); semana += n; }
+    for (i = 7; i <= 13; i++) anterior += dias[diaMenos(hoje, i)] || 0;
+
+    var melhor = null;
+    ativos.forEach(function (d) { if (!melhor || dias[d] >= melhor.n) melhor = { dia: d, n: dias[d] }; }); // empate: o mais recente
+
+    // sequência atual: dias seguidos com foco; se hoje ainda não teve, a de ontem continua viva (como no check-in)
+    var atual = 0, cursor = dias[hoje] > 0 ? hoje : diaMenos(hoje, 1);
+    while (dias[cursor] > 0) { atual++; cursor = diaMenos(cursor, 1); }
+    var melhorSeq = 0, corrente = 0;
+    ativos.forEach(function (d, k) {
+      corrente = k > 0 && diaMenos(d, 1) === ativos[k - 1] ? corrente + 1 : 1;
+      if (corrente > melhorSeq) melhorSeq = corrente;
+    });
+
+    // dia da semana mais forte: média sobre todos os dias do período (também os sem foco), só com 14 dias ou mais de histórico
+    var forte = null, primeiro = ativos[0], cont = [0, 0, 0, 0, 0, 0, 0], soma = [0, 0, 0, 0, 0, 0, 0], span = 0, c = hoje;
+    while (c >= primeiro && span < MAX_DIAS + 7) { var w = diaDaSemana(c); cont[w]++; soma[w] += dias[c] || 0; span++; c = diaMenos(c, 1); }
+    if (span >= 14) {
+      for (var w2 = 0; w2 < 7; w2++) {
+        var media = cont[w2] ? soma[w2] / cont[w2] : 0;
+        if (media > 0 && (!forte || media > forte.media)) forte = { semana: w2, media: media };
+      }
+    }
+    return {
+      total: tot, minutosFoco: tot * DURACAO.foco / MIN, diasComFoco: ativos.length, mediaPorDiaAtivo: tot / ativos.length,
+      semana: semana, semanaAnterior: anterior, ultimos7: ultimos7, melhorDia: melhor,
+      sequenciaAtual: atual, melhorSequencia: melhorSeq, diaForte: forte, diasAnalisados: span
+    };
+  }
+  /* 150 -> "2 h 30 min"; 25 -> "25 min"; 120 -> "2 h". */
+  function formatarMinutos(min) {
+    min = Math.round(min);
+    var h = Math.floor(min / 60), m = min % 60;
+    return h === 0 ? m + ' min' : m === 0 ? h + ' h' : h + ' h ' + m + ' min';
+  }
+
   /* ---------- notificação fixa e ações (a página e o service worker usam o mesmo código) ---------- */
 
   function tituloFase(e) {
@@ -180,6 +236,7 @@
     CHAVE: CHAVE, DURACAO: DURACAO, CICLOS: CICLOS, MAX_DIAS: MAX_DIAS,
     novo: novo, status: status, restante: restante, iniciar: iniciar, pausar: pausar, parar: parar, pular: pular, avancar: avancar,
     vincular: vincular, pomodorosDoDia: pomodorosDoDia, historico: historico, total: total,
+    estatisticas: estatisticas, formatarMinutos: formatarMinutos, diaMenos: diaMenos,
     notificacao: notificacao, opcoesNotificacao: opcoesNotificacao, rotuloIniciar: rotuloIniciar, alarmeDe: alarmeDe, aplicarAcao: aplicarAcao,
     normalizar: normalizar, carregar: carregar, salvar: salvar, formatarTempo: formatarTempo, dataLocal: dataLocal
   };

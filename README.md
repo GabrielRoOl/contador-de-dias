@@ -11,7 +11,7 @@ PWA para contar há quantos dias você parou de fazer algo (ou mantém um hábit
   <tr>
     <td><img src="docs/img/pomodoro-foco.png" width="230" alt="Pomodoro em foco, 18:30 restantes, no tema escuro"></td>
     <td><img src="docs/img/pomodoro-pausa.png" width="230" alt="Pomodoro em pausa, pausado, no tema claro"></td>
-    <td><img src="docs/img/pomodoro-historico.png" width="230" alt="Histórico de pomodoros por dia"></td>
+    <td><img src="docs/img/pomodoro-estatisticas.png" width="230" alt="Estatísticas do Pomodoro: últimos 7 dias, sequência, melhor dia, tempo de foco e barras por dia"></td>
   </tr>
 </table>
 
@@ -29,7 +29,7 @@ As imagens são geradas com dados inventados por `python3 scripts/capturas.py`.
 **Pomodoro** (tela própria, `#pomodoro`)
 - Ciclo fixo: foco de 25 min, pausa de 5 min e, a cada quatro focos, pausa longa de 15 min. Cada fase espera o toque para começar. Pausar, Pular e Parar (que pede confirmação).
 - Opcionalmente vinculado a uma contagem do tipo manter: cada foco concluído faz o check-in do dia.
-- Histórico atrás de um botão, sem lista aberta e sem cobrança.
+- Histórico e estatísticas atrás de um botão, sem lista aberta e sem cobrança: últimos 7 dias contra os 7 anteriores, sequência de dias com foco (atual e melhor), melhor dia, tempo total de foco, barras por dia e o dia da semana em que você rende mais.
 - **Com o app fechado** há uma notificação fixa com o horário do fim e botões Pausar e Parar. Quando a fase acaba, o servidor manda o aviso, com vibração, e o botão *Iniciar pausa* (ou *Iniciar foco*) já começa a fase seguinte sem abrir o app.
 
 **Notificações**

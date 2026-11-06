@@ -348,6 +348,15 @@ try:
         hoje = datetime.date.today().isoformat()
         est_v2 = lambda: next(c for c in json.loads(pg.evaluate("localStorage.getItem('contagem-de-dias:v2')"))['contagens'] if c['id'] == vazia['id'])
         check(espera(lambda: hoje in (est_v2().get('checkins') or [])), 'o foco concluído pela notificação marca o check-in da contagem vinculada')
+        # estatísticas sob a CSP: o desenho das barras (altura por CSSOM) não pode gerar violação
+        n_csp = len(VIOLACOES_CSP)
+        pg.evaluate("location.hash = '#pomodoro'")
+        pg.wait_for_selector('#tela-pomodoro:not([hidden])')
+        pg.click('#pomo-historico-abrir')
+        check(pg.locator('#pomo-stats').is_visible() and pg.locator('#ps-barras .col').count() == 7 and pg.locator('#ps-barras .col.hoje .barra').evaluate('e => e.offsetHeight') > 20, 'estatísticas do pomodoro aparecem com as barras desenhadas')
+        check(len(VIOLACOES_CSP) == n_csp, f'estatísticas: nenhuma violação da CSP {VIOLACOES_CSP[n_csp:][:2]}')
+        pg.keyboard.press('Escape')
+        pg.evaluate("location.hash = ''")
         botao_notificacao('parar')
         check(espera(lambda: alarme() is None and not do_pomo()), 'Parar encerra tudo: sem alarme e sem notificação no fim')
         # --- service worker: push de verdade (CDP) e clique

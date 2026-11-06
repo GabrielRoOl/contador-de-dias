@@ -36,7 +36,8 @@ def estado(modo):
 
 def pomodoro(fase='foco', rodando=True, restante_ms=18 * 60000 + 32000, ciclo=2):
     dias = {}
-    for i, n in enumerate([6, 5, 8, 4, 7, 3, 0, 5, 6]):
+    padrao = [6, 5, 8, 4, 7, 3, 0, 5, 6, 4, 8, 5, 2, 0, 7, 6, 5, 9, 4, 3, 0, 6, 7, 5, 8, 4, 2, 0, 6, 5, 7, 8, 4, 5]
+    for i, n in enumerate(padrao):
         dias[(AGORA - (i + 1) * DIA).date().isoformat()] = n
     dias[AGORA.date().isoformat()] = 3
     dias = {k: v for k, v in dias.items() if v}
@@ -93,7 +94,7 @@ try:
         pg.click('#toggle-form'); pg.wait_for_timeout(400); foto(pg, 'nova-contagem'); pg.keyboard.press('Escape')
         pg.click('#toggle-ajustes'); pg.wait_for_timeout(400); foto(pg, 'ajustes'); ctx.close()
         ctx, pg = abrir(b, 'dark', 'escuro', pomodoro(), '#pomodoro'); foto(pg, 'pomodoro-foco')
-        pg.click('#pomo-historico-abrir'); pg.wait_for_timeout(400); foto(pg, 'pomodoro-historico'); ctx.close()
+        pg.click('#pomo-historico-abrir'); pg.wait_for_timeout(400); foto(pg, 'pomodoro-estatisticas'); ctx.close()
         ctx, pg = abrir(b, 'light', 'claro', pomodoro('pausa', False, 5 * 60000 - 90000, 2), '#pomodoro'); foto(pg, 'pomodoro-pausa'); ctx.close()
         b.close()
 finally:

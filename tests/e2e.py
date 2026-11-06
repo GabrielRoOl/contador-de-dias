@@ -416,6 +416,10 @@ try:
         check(pp.locator('#pomo-historico-lista li').count() == 0 and not pp.evaluate("document.getElementById('pomo-historico').open"), 'pomodoro: o histórico não aparece como lista na tela')
         pp.click('#pomo-historico-abrir')
         check(pp.evaluate("document.getElementById('pomo-historico').open") and pp.locator('#pomo-historico-lista li').count() == 1 and 'Total: 1 pomodoro' in pp.locator('#pomo-historico-total').inner_text(), 'pomodoro: botão Histórico abre a janela com os dias')
+        check(pp.locator('#pomo-stats').is_visible() and pp.locator('#ps-semana').text_content() == '1' and pp.locator('#ps-seq').text_content() == '1 dia'
+              and pp.locator('#ps-melhor').text_content() == '1' and pp.locator('#ps-tempo').text_content() == '25 min', 'pomodoro: a janela mostra as estatísticas do pomodoro feito')
+        check(pp.locator('#ps-barras .col').count() == 7 and pp.locator('#ps-barras .col.hoje .barra').evaluate('e => e.offsetHeight') > 20 and 'Pomodoros nos últimos 7 dias' in pp.get_attribute('#ps-barras', 'aria-label'), 'pomodoro: sete barras, a de hoje com altura, e rótulo acessível')
+        check('14 dias' in pp.locator('#ps-forte').inner_text(), 'pomodoro: o dia mais forte só aparece com histórico suficiente')
         foto(pp, '33-pomodoro-historico')
         pp.keyboard.press('Escape')
         # ciclo completo: 4 focos, 3 pausas curtas e a pausa longa, e volta ao foco 1

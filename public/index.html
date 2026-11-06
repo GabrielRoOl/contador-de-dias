@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="app.css?v=27">
+<link rel="stylesheet" href="app.css?v=29">
 <script>try{var p=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias,r=document.documentElement;if(p.visual)r.setAttribute('data-visual',p.visual);if(p.modo==='claro')r.setAttribute('data-theme','light');else if(p.modo==='escuro')r.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
@@ -195,22 +195,32 @@
 <dialog id="pomo-historico" aria-labelledby="pomo-historico-titulo">
   <div class="dialogo">
     <div class="dialogo-topo">
-      <h2 id="pomo-historico-titulo">Histórico</h2>
+      <h2 id="pomo-historico-titulo">Histórico e estatísticas</h2>
       <button class="icone-btn" type="button" data-fechar-dialogo aria-label="Fechar histórico">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <p class="hint" id="pomo-historico-total"></p>
+    <div id="pomo-stats" hidden>
+      <dl class="pomo-resumo">
+        <div><dt>Últimos 7 dias</dt><dd id="ps-semana"></dd><small id="ps-semana-cmp"></small></div>
+        <div><dt>Sequência</dt><dd id="ps-seq"></dd><small id="ps-seq-melhor"></small></div>
+        <div><dt>Melhor dia</dt><dd id="ps-melhor"></dd><small id="ps-melhor-dia"></small></div>
+        <div><dt>Tempo de foco</dt><dd id="ps-tempo"></dd><small id="ps-tempo-media"></small></div>
+      </dl>
+      <div class="pomo-barras" id="ps-barras" role="img"></div>
+      <p class="hint" id="ps-forte"></p>
+    </div>
     <ul class="pomo-dias" id="pomo-historico-lista"></ul>
     <button class="btn primary" type="button" data-fechar-dialogo>Fechar</button>
   </div>
 </dialog>
 
-<script src="logica.js?v=27"></script>
-<script src="textos.js?v=27"></script>
-<script src="pomodoro.js?v=27"></script>
-<script src="armazem.js?v=27"></script>
-<script src="sincronia.js?v=27"></script>
-<script src="app.js?v=27"></script>
+<script src="logica.js?v=29"></script>
+<script src="textos.js?v=29"></script>
+<script src="pomodoro.js?v=29"></script>
+<script src="armazem.js?v=29"></script>
+<script src="sincronia.js?v=29"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

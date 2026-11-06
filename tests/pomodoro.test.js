@@ -263,3 +263,77 @@ test('atualizadoEm sobrevive ao salvar e carregar, e lixo vira 0', () => {
   assert.equal(P.normalizar({ ...e, atualizadoEm: 'x' }).atualizadoEm, 0);
   assert.equal(P.normalizar({ ...e, atualizadoEm: -5 }).atualizadoEm, 0);
 });
+
+/* ---------- estatísticas ---------- */
+const comDias = (mapa) => ({ ...P.novo(), dias: mapa });
+const HOJE = '2026-11-05'; // quinta-feira
+const dm = (n) => P.diaMenos(HOJE, n);
+
+test('estatísticas: sem nenhum pomodoro não há o que mostrar', () => {
+  assert.equal(P.estatisticas(P.novo(), HOJE), null);
+  assert.equal(P.estatisticas(comDias({ [dm(1)]: 0 }), HOJE), null);
+});
+
+test('diaMenos atravessa mês, ano e horário de verão', () => {
+  assert.equal(P.diaMenos('2026-03-01', 1), '2026-02-28');
+  assert.equal(P.diaMenos('2024-03-01', 1), '2024-02-29');
+  assert.equal(P.diaMenos('2026-01-01', 1), '2025-12-31');
+  assert.equal(P.diaMenos('2026-11-05', 0), '2026-11-05');
+  assert.equal(P.diaMenos('2018-11-05', 3), '2018-11-02'); // virada de horário de verão no Brasil era em novembro
+});
+
+test('estatísticas: totais, tempo de foco e média por dia com foco', () => {
+  const s = P.estatisticas(comDias({ [HOJE]: 3, [dm(1)]: 5, [dm(3)]: 4 }), HOJE);
+  assert.equal(s.total, 12); assert.equal(s.minutosFoco, 300); assert.equal(s.diasComFoco, 3); assert.equal(s.mediaPorDiaAtivo, 4);
+});
+
+test('estatísticas: últimos 7 dias contra os 7 anteriores, e as barras em ordem cronológica', () => {
+  const dias = { [HOJE]: 2, [dm(6)]: 1, [dm(7)]: 4, [dm(13)]: 3, [dm(14)]: 9 };
+  const s = P.estatisticas(comDias(dias), HOJE);
+  assert.equal(s.semana, 3); assert.equal(s.semanaAnterior, 7, 'os dias -7 a -13; o -14 fica de fora');
+  assert.equal(s.ultimos7.length, 7);
+  assert.equal(s.ultimos7[0].dia, dm(6)); assert.equal(s.ultimos7[6].dia, HOJE);
+  assert.deepEqual(s.ultimos7.map((d) => d.n), [1, 0, 0, 0, 0, 0, 2]);
+  assert.equal(s.ultimos7[6].semana, 4, 'quinta-feira');
+});
+
+test('estatísticas: melhor dia (empate fica com o mais recente)', () => {
+  assert.deepEqual(P.estatisticas(comDias({ [dm(5)]: 6, [dm(2)]: 8, [dm(9)]: 8 }), HOJE).melhorDia, { dia: dm(2), n: 8 });
+});
+
+test('estatísticas: sequência atual segue viva se hoje ainda não teve foco, e quebra com um dia vazio', () => {
+  assert.equal(P.estatisticas(comDias({ [HOJE]: 1, [dm(1)]: 1, [dm(2)]: 2 }), HOJE).sequenciaAtual, 3);
+  assert.equal(P.estatisticas(comDias({ [dm(1)]: 1, [dm(2)]: 2 }), HOJE).sequenciaAtual, 2, 'hoje ainda não: a de ontem vale');
+  assert.equal(P.estatisticas(comDias({ [dm(2)]: 1, [dm(3)]: 2 }), HOJE).sequenciaAtual, 0, 'ontem sem foco: quebrou');
+  assert.equal(P.estatisticas(comDias({ [HOJE]: 1, [dm(2)]: 1, [dm(3)]: 1 }), HOJE).sequenciaAtual, 1);
+});
+
+test('estatísticas: melhor sequência do período', () => {
+  const dias = { [dm(20)]: 1, [dm(19)]: 1, [dm(18)]: 1, [dm(17)]: 1, [dm(10)]: 1, [dm(9)]: 1, [HOJE]: 1 };
+  const s = P.estatisticas(comDias(dias), HOJE);
+  assert.equal(s.melhorSequencia, 4); assert.equal(s.sequenciaAtual, 1);
+});
+
+test('estatísticas: dia da semana mais forte só aparece com 14 dias ou mais de histórico', () => {
+  assert.equal(P.estatisticas(comDias({ [HOJE]: 5, [dm(3)]: 9 }), HOJE).diaForte, null);
+  // 4 semanas: toda terça (dia 2) tem 6 pomodoros, o resto só 1 em um dia
+  const dias = {};
+  for (let i = 0; i < 28; i++) { const d = dm(i); if (new Date(d + 'T12:00:00').getDay() === 2) dias[d] = 6; }
+  dias[dm(27)] = dias[dm(27)] || 1;
+  const s = P.estatisticas(comDias(dias), HOJE);
+  assert.equal(s.diaForte.semana, 2); assert.equal(s.diaForte.media, 6);
+});
+
+test('formatarMinutos', () => {
+  assert.equal(P.formatarMinutos(25), '25 min'); assert.equal(P.formatarMinutos(60), '1 h');
+  assert.equal(P.formatarMinutos(150), '2 h 30 min'); assert.equal(P.formatarMinutos(0), '0 min');
+});
+
+test('estatísticas só olham os dias guardados: acima de MAX_DIAS os mais antigos já foram podados', () => {
+  let e = P.novo();
+  const base = new Date(2026, 0, 1, 10).getTime();
+  for (let i = 0; i < P.MAX_DIAS + 30; i++) e = P.avancar(P.iniciar(P.parar(e), base + i * 86400000), base + i * 86400000 + P.DURACAO.foco).estado;
+  assert.equal(Object.keys(e.dias).length, P.MAX_DIAS);
+  const s = P.estatisticas(e, P.dataLocal(base + (P.MAX_DIAS + 29) * 86400000));
+  assert.equal(s.total, P.MAX_DIAS); assert.equal(s.melhorSequencia, P.MAX_DIAS);
+});

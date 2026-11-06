@@ -844,14 +844,56 @@
   });
 
   var fmtDiaHist = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  var fmtDiaCurto = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short' });
+  var fmtMedia = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+  var INICIAL_SEMANA = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+  var NOME_SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+  var QUANDO_SEMANA = ['aos domingos', 'às segundas', 'às terças', 'às quartas', 'às quintas', 'às sextas', 'aos sábados'];
+  function dataDoDia(d) { var p = d.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }
+
+  /* Resumo, barras dos últimos 7 dias e o dia mais forte. Sem nenhum pomodoro ainda, a área fica escondida. */
+  function desenharEstatisticas() {
+    var area = document.getElementById('pomo-stats');
+    var s = PM.estatisticas(pomo, PM.dataLocal(Date.now()));
+    area.hidden = !s;
+    if (!s) return;
+    var cmp = s.semana - s.semanaAnterior;
+    document.getElementById('ps-semana').textContent = s.semana;
+    document.getElementById('ps-semana-cmp').textContent = cmp === 0 ? 'igual aos 7 dias anteriores' : cmp > 0 ? cmp + ' a mais que nos 7 dias anteriores' : (-cmp) + ' a menos que nos 7 dias anteriores';
+    document.getElementById('ps-seq').textContent = s.sequenciaAtual + ' ' + plural(s.sequenciaAtual, 'dia', 'dias');
+    document.getElementById('ps-seq-melhor').textContent = 'melhor: ' + s.melhorSequencia + ' ' + plural(s.melhorSequencia, 'dia', 'dias');
+    document.getElementById('ps-melhor').textContent = s.melhorDia.n;
+    document.getElementById('ps-melhor-dia').textContent = fmtDiaCurto.format(dataDoDia(s.melhorDia.dia));
+    document.getElementById('ps-tempo').textContent = PM.formatarMinutos(s.minutosFoco);
+    document.getElementById('ps-tempo-media').textContent = 'média de ' + fmtMedia.format(s.mediaPorDiaAtivo) + ' por dia com foco';
+    var barras = document.getElementById('ps-barras');
+    var maior = Math.max.apply(null, s.ultimos7.map(function (d) { return d.n; }).concat([1]));
+    barras.textContent = '';
+    s.ultimos7.forEach(function (d, i) {
+      var col = document.createElement('div');
+      col.className = 'col' + (i === 6 ? ' hoje' : '') + (d.n === 0 ? ' vazio' : '');
+      var n = document.createElement('span'); n.textContent = d.n;
+      var b = document.createElement('div'); b.className = 'barra'; b.style.height = Math.round(d.n / maior * 70) + 'px'; // CSSOM é permitido pela CSP (atributo style= não)
+      var l = document.createElement('span'); l.textContent = INICIAL_SEMANA[d.semana];
+      col.appendChild(n); col.appendChild(b); col.appendChild(l);
+      barras.appendChild(col);
+    });
+    barras.setAttribute('aria-label', 'Pomodoros nos últimos 7 dias: ' + s.ultimos7.map(function (d) {
+      return NOME_SEMANA[d.semana] + ' ' + d.n;
+    }).join(', '));
+    document.getElementById('ps-forte').textContent = s.diaForte
+      ? 'Você rende mais ' + QUANDO_SEMANA[s.diaForte.semana] + ': média de ' + fmtMedia.format(s.diaForte.media) + ' ' + plural(s.diaForte.media, 'pomodoro', 'pomodoros') + ' nesses dias (últimos ' + s.diasAnalisados + ' dias).'
+      : 'O dia da semana mais forte aparece depois de 14 dias de histórico.';
+  }
+
   document.getElementById('pomo-historico-abrir').addEventListener('click', function () {
     var h = PM.historico(pomo);
     document.getElementById('pomo-historico-total').textContent = h.length === 0
       ? 'Nenhum pomodoro registrado ainda. Cada foco de 25 minutos concluído aparece aqui.'
       : 'Total: ' + PM.total(pomo) + ' ' + plural(PM.total(pomo), 'pomodoro', 'pomodoros') + ' nos últimos ' + PM.MAX_DIAS + ' dias.';
+    desenharEstatisticas();
     document.getElementById('pomo-historico-lista').innerHTML = h.map(function (d) {
-      var p = d.dia.split('-');
-      return '<li><span>' + esc(fmtDiaHist.format(new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])))) + '</span><span>' + d.n + '</span></li>';
+      return '<li><span>' + esc(fmtDiaHist.format(dataDoDia(d.dia))) + '</span><span>' + d.n + '</span></li>';
     }).join('');
     dialogoHistorico.showModal();
   });
