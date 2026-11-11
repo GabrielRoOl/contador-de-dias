@@ -1,7 +1,7 @@
 // Mude o número da versão sempre que alterar algum arquivo do app.
-const CACHE = 'contagem-de-dias-v29';
+const CACHE = 'contagem-de-dias-v33';
 const ARQUIVOS = [
-  './', './index.html', './app.css', './logica.js', './textos.js', './sincronia.js', './pomodoro.js', './armazem.js', './app.js', './manifest.webmanifest',
+  './', './index.html', './app.css', './logica.js', './textos.js', './sincronia.js', './pomodoro.js', './cronograma.js', './armazem.js', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './icon-badge.png',
   './fonts/big-shoulders-display-700.woff2', './fonts/big-shoulders-display-800.woff2',
   './fonts/instrument-sans-400.woff2', './fonts/instrument-sans-600.woff2'
@@ -104,12 +104,13 @@ self.addEventListener('push', (e) => {
     badge: './icon-badge.png',
     data: { url: urlDoApp(d.url), marco: d.marco === true }
   };
-  if (tag === 'pomodoro') {
-    // Fim de fase: toca e vibra (o som é o da notificação do Android) e já traz o botão que inicia a fase seguinte.
+  if (tag === 'pomodoro' || tag === 'cronograma') {
+    // Fim de fase ou de passo: toca e vibra (o som é o da notificação do Android).
     opcoes.silent = false;
     opcoes.vibrate = [300, 150, 300, 150, 300];
     opcoes.requireInteraction = true;
-    if (FASES_POMODORO.indexOf(d.proxima) !== -1) {
+    // O Pomodoro ainda traz o botão que inicia a fase seguinte.
+    if (tag === 'pomodoro' && FASES_POMODORO.indexOf(d.proxima) !== -1) {
       opcoes.actions = [{ action: 'iniciar', title: self.Pomodoro.rotuloIniciar(d.proxima) }];
       opcoes.data.proxima = d.proxima;
     }
