@@ -5,7 +5,7 @@ Kotlin + Ktor (CIO) + SQLite. Serve o app em `/contador/`, guarda o estado de ca
 ## Comandos
 
 ```bash
-mvn test                      # 200 testes (precisa de Node só para regerar as fixtures)
+mvn test                      # 212 testes (precisa de Node só para regerar as fixtures)
 mvn -DskipTests package       # gera target/contador.jar (fat jar, ~18 MB)
 java -jar target/contador.jar gerar-vapid     # imprime as chaves VAPID para o .env
 java -jar target/contador.jar gerar-admin     # imprime o ADMIN para o .env
@@ -26,6 +26,8 @@ Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor 
 | `DELETE /dispositivos/{id}` | apaga tudo do dispositivo |
 | `PUT /dispositivos/{id}/alarme` | alarme do Pomodoro: `{em, fase, proxima}` (`em` = fim da fase em ms, entre 1 min atrás e 2 h à frente; fases `foco`, `pausa`, `longa`). Substitui o anterior. 409 sem inscrição de push; 120 alterações por hora por aparelho |
 | `DELETE /dispositivos/{id}/alarme` | cancela o alarme (idempotente) |
+| `PUT /dispositivos/{id}/cronograma` | cronograma: `{passos:[{em, titulo, corpo}]}`, até 20 fins de passo em ordem (`em` em ms, de 1 min atrás a 24 h à frente; título de 1 a 60 e texto de até 160 caracteres, sem controle). Substitui tudo. 409 sem inscrição de push; divide o limite de 120 alterações por hora com o alarme |
+| `DELETE /dispositivos/{id}/cronograma` | cancela todos os avisos do cronograma (idempotente) |
 | `GET /dispositivos/{id}/convites` | só administrador (403 para os outros): lista os convites, sem os códigos |
 | `POST /dispositivos/{id}/convites` | só administrador: `{nome}` → `{id, codigo, expiraEm}`; o código só aparece nesta resposta; no máximo 10 pendentes, 20 por hora |
 | `DELETE /dispositivos/{id}/convites/{convite}` | só administrador: revoga o convite; se já foi usado, apaga o aparelho que o usou |
@@ -44,6 +46,10 @@ As rotas com `{id}` exigem `Authorization: Bearer <segredo>`. Id desconhecido e 
 ## Agendador
 
 Roda a cada minuto. Envia para o dispositivo se já passou da `horaResumo` (no fuso dele), ainda estamos na janela de 3 h, e o dia não recebeu o aviso. O dia só conta como enviado após o sucesso; erros temporários repetem a cada 5 min (até 5 vezes); 404/410 removem a inscrição. `TTL` de 3 h e `Topic: resumo-diario`.
+
+### Cronograma
+
+A mesma rotina de 15 s manda o push de cada fim de passo vencido (`tag: cronograma`, `url: ./#cronograma`, TTL de 2 min; o texto vem pronto do app). Fim de passo vencido há mais que o TTL é descartado; falha repete até 3 vezes; 404/410 removem a inscrição e o cronograma. A tabela `cronograma_alarmes` apaga em cascata com o dispositivo (migração v6).
 
 ### Alarme do Pomodoro
 
