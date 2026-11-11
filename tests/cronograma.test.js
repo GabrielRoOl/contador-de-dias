@@ -9,7 +9,7 @@ const rodando = (t = T0) => C.iniciar(C.abrir(comTreino(), 'r1'), t);
 
 test('criar rotina valida nome, passos e tempos, e limpa espaços', () => {
   const e = C.criarRotina(C.novo(), { nome: '  Treino  ', passos: [{ nome: ' Prancha ', seg: 120.4 }] }, 'a');
-  assert.deepEqual(e.rotinas[0], { id: 'a', nome: 'Treino', passos: [{ nome: 'Prancha', seg: 120 }], feitas: 0, ultima: null });
+  assert.deepEqual(e.rotinas[0], { id: 'a', nome: 'Treino', passos: [{ nome: 'Prancha', seg: 120 }], intervalo: 0, feitas: 0, ultima: null });
   const ruim = (d, msg) => assert.throws(() => C.criarRotina(C.novo(), d, 'x'), msg);
   ruim({ nome: '', passos: [{ nome: 'a', seg: 60 }] }, /nome ao cronograma/);
   ruim({ nome: 'x'.repeat(41), passos: [{ nome: 'a', seg: 60 }] }, /até 40/);
@@ -150,4 +150,90 @@ test('carregar e salvar passam pelo armazenamento, e armazenamento quebrado não
   assert.equal(C.carregar(arm).rotinas[0].nome, 'Treino rápido');
   assert.equal(C.salvar({ setItem() { throw new Error('cheio'); } }, rodando()), false);
   assert.deepEqual(C.carregar({ getItem() { throw new Error('x'); } }), C.novo());
+});
+
+/* ---------- intervalo (descanso) entre os passos ---------- */
+const comIntervalo = (iv = 30) => C.criarRotina(C.novo(), Object.assign({}, treino, { intervalo: iv }), 'r1');
+const rodandoIv = (iv = 30, t = T0) => C.iniciar(C.abrir(comIntervalo(iv), 'r1'), t);
+
+test('intervalo: só aceita 15, 30, 45 ou 60 s; qualquer outra coisa vira sem intervalo', () => {
+  assert.deepEqual(C.INTERVALOS, [0, 15, 30, 45, 60]);
+  for (const iv of [15, 30, 45, 60]) assert.equal(comIntervalo(iv).rotinas[0].intervalo, iv);
+  for (const iv of [undefined, null, 'abc', 20, -5, 90]) assert.equal(C.criarRotina(C.novo(), Object.assign({}, treino, { intervalo: iv }), 'x').rotinas[0].intervalo, 0);
+});
+
+test('intervalo: o total soma os descansos entre os passos, nunca depois do último', () => {
+  assert.equal(C.totalSeg(comTreino().rotinas[0]), 720);
+  assert.equal(C.totalSeg(comIntervalo(30).rotinas[0]), 720 + 2 * 30);
+  const um = C.criarRotina(C.novo(), { nome: 'x', passos: [{ nome: 'a', seg: 60 }], intervalo: 60 }, 'u');
+  assert.equal(C.totalSeg(um.rotinas[0]), 60);
+});
+
+test('intervalo: depois de cada passo entra um descanso, e o último passo não tem descanso depois', () => {
+  let e = rodandoIv(30);
+  let r = C.avancar(e, T0 + 120000);
+  assert.deepEqual(r.concluiu.passos, [{ indice: 0, nome: 'Prancha', descanso: false }]);
+  assert.equal(r.estado.sessao.passo, 1); assert.equal(r.estado.sessao.descanso, true);
+  assert.equal(C.duracaoFase(r.estado), 30000); assert.equal(C.restante(r.estado, T0 + 120000), 30000);
+  r = C.avancar(r.estado, T0 + 150000);
+  assert.equal(r.estado.sessao.passo, 1); assert.equal(r.estado.sessao.descanso, false);
+  assert.equal(C.duracaoFase(r.estado), 300000);
+  r = C.avancar(r.estado, T0 + 450000 + 30000 + 300000);
+  assert.equal(r.concluiu.terminou, true); assert.equal(r.estado.rotinas[0].feitas, 1);
+  assert.equal(C.status(r.estado), 'concluido');
+  assert.equal(r.concluiu.passos.filter((f) => f.descanso).length, 1);
+  assert.equal(r.concluiu.em, T0 + 120000 + 30000 + 300000 + 30000 + 300000);
+});
+
+test('intervalo: com o app fechado, vários passos e descansos de uma vez, sem acumular atraso', () => {
+  const r = C.avancar(rodandoIv(15), T0 + 120000 + 15000 + 300000 + 5000); // passou prancha, descanso, agachamento; no 2º descanso
+  assert.equal(r.estado.sessao.passo, 2); assert.equal(r.estado.sessao.descanso, true);
+  assert.equal(r.estado.sessao.fimEm, T0 + 120000 + 15000 + 300000 + 15000);
+  assert.equal(r.concluiu.terminou, false);
+});
+
+test('intervalo: pular no passo vai ao descanso; pular o descanso vai ao passo; pular o último encerra', () => {
+  let e = C.pular(rodandoIv(30), T0 + 1000);
+  assert.equal(e.sessao.passo, 1); assert.equal(e.sessao.descanso, true); assert.equal(e.sessao.fimEm, T0 + 1000 + 30000);
+  e = C.pular(e, T0 + 2000);
+  assert.equal(e.sessao.passo, 1); assert.equal(e.sessao.descanso, false); assert.equal(e.sessao.fimEm, T0 + 2000 + 300000);
+  e = C.pular(C.pular(e, T0 + 3000), T0 + 4000); // passo 2 -> descanso -> passo 3
+  assert.equal(e.sessao.passo, 2); assert.equal(e.sessao.descanso, false);
+  e = C.pular(e, T0 + 5000);
+  assert.equal(C.status(e), 'concluido'); assert.equal(e.rotinas[0].feitas, 0);
+});
+
+test('intervalo: pausar durante o descanso guarda o que faltava e continuar volta ao descanso', () => {
+  let e = C.avancar(rodandoIv(30), T0 + 120000).estado;
+  e = C.pausar(e, T0 + 120000 + 12000);
+  assert.equal(C.status(e), 'pausado'); assert.equal(e.sessao.descanso, true); assert.equal(e.sessao.restanteMs, 18000);
+  e = C.iniciar(e, T0 + 200000);
+  assert.equal(e.sessao.fimEm, T0 + 200000 + 18000);
+});
+
+test('intervalo: avisos de servidor para cada fim de passo e de descanso', () => {
+  const l = C.alarmesDe(rodandoIv(30));
+  assert.equal(l.length, 5);
+  assert.deepEqual(l.map((a) => a.em), [T0 + 120000, T0 + 150000, T0 + 450000, T0 + 480000, T0 + 780000]);
+  assert.deepEqual(l[0], { em: T0 + 120000, titulo: 'Passo concluído', corpo: 'Prancha. Descanse 30 s. Próximo: Agachamento' });
+  assert.deepEqual(l[1], { em: T0 + 150000, titulo: 'Descanso acabou', corpo: 'Agora: Agachamento · 5 min' });
+  assert.equal(l[4].titulo, 'Cronograma concluído');
+  // durante o descanso, só o que ainda falta
+  const d = C.alarmesDe(C.avancar(rodandoIv(30), T0 + 121000).estado);
+  assert.equal(d.length, 4); assert.equal(d[0].titulo, 'Descanso acabou');
+  // sem intervalo, igual a antes
+  assert.equal(C.alarmesDe(rodando()).length, 3);
+});
+
+test('intervalo: sessão e rotina salvas voltam do armazenamento; rotina antiga fica sem intervalo', () => {
+  const guardado = new Map(); const arm = { getItem: (k) => guardado.get(k) ?? null, setItem: (k, v) => guardado.set(k, v) };
+  const e = C.avancar(rodandoIv(45), T0 + 120000).estado;
+  C.salvar(arm, e);
+  const volta = C.carregar(arm);
+  assert.equal(volta.rotinas[0].intervalo, 45); assert.equal(volta.sessao.descanso, true); assert.equal(volta.sessao.fimEm, e.sessao.fimEm);
+  const antigo = C.normalizar({ versao: 1, rotinas: [{ id: 'a', nome: 'x', passos: [{ nome: 'p', seg: 60 }], feitas: 0, ultima: null }], sessao: null });
+  assert.equal(antigo.rotinas[0].intervalo, 0);
+  // descanso na sessão de uma rotina sem intervalo é descartado
+  const ruim = C.normalizar({ versao: 1, rotinas: [{ id: 'a', nome: 'x', passos: [{ nome: 'p', seg: 60 }, { nome: 'q', seg: 60 }], feitas: 0, ultima: null }], sessao: { rotinaId: 'a', passo: 1, descanso: true, rodando: false } });
+  assert.equal(ruim.sessao.descanso, false);
 });
