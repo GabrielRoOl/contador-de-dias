@@ -71,4 +71,26 @@ object Validacao {
         if (!DATA.matches(s)) return false
         return try { LocalDate.parse(s); true } catch (_: DateTimeException) { false }
     }
+
+    // ---------------------------------------------------------------- cronograma (fins de passo)
+    const val CRONOGRAMA_MAX_PASSOS = 20
+    const val CRONOGRAMA_MAX_TITULO = 60
+    const val CRONOGRAMA_MAX_CORPO = 160
+    const val CRONOGRAMA_ATRASO_MAX_MS = 60_000L
+    const val CRONOGRAMA_ANTECEDENCIA_MAX_MS = 24L * 3_600_000
+
+    /** Problemas do cronograma recebido (lista vazia = válido). Nada do que vem da rede é confiado. */
+    fun errosCronograma(passos: List<PassoCronograma>, agora: Long): List<String> {
+        val erros = mutableListOf<String>()
+        if (passos.isEmpty()) erros += "o cronograma precisa de pelo menos um passo"
+        if (passos.size > CRONOGRAMA_MAX_PASSOS) erros += "no máximo $CRONOGRAMA_MAX_PASSOS passos"
+        passos.take(CRONOGRAMA_MAX_PASSOS).forEachIndexed { i, p ->
+            val n = i + 1
+            if (p.em < agora - CRONOGRAMA_ATRASO_MAX_MS || p.em > agora + CRONOGRAMA_ANTECEDENCIA_MAX_MS) erros += "passo $n: horário fora do permitido"
+            if (i > 0 && p.em < passos[i - 1].em) erros += "passo $n: os horários devem estar em ordem"
+            if (p.titulo.isBlank() || p.titulo.length > CRONOGRAMA_MAX_TITULO || p.titulo.any { it.isISOControl() }) erros += "passo $n: título de 1 a $CRONOGRAMA_MAX_TITULO caracteres"
+            if (p.corpo.length > CRONOGRAMA_MAX_CORPO || p.corpo.any { it.isISOControl() }) erros += "passo $n: texto de até $CRONOGRAMA_MAX_CORPO caracteres"
+        }
+        return erros.take(20)
+    }
 }

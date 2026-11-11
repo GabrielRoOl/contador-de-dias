@@ -17,6 +17,12 @@ class Convite(val id: String, val nome: String, val criadoEm: Long, val expiraEm
 /** Alarme do Pomodoro que já venceu e está pronto para ser enviado. */
 class AlarmeVencido(val id: String, val inscricao: Inscricao, val em: Long, val fase: String, val proxima: String, val tentativas: Int)
 
+/** Um fim de passo do cronograma que já venceu e está pronto para ser enviado. */
+class CronogramaVencido(val id: String, val ordem: Int, val inscricao: Inscricao, val em: Long, val titulo: String, val corpo: String, val tentativas: Int)
+
+/** Um fim de passo do cronograma, como o app manda: horário (ms) e o texto do aviso. */
+data class PassoCronograma(val em: Long, val titulo: String, val corpo: String)
+
 class Dispositivo(
     val id: String,
     val segredoHash: ByteArray,
@@ -124,6 +130,24 @@ class Banco(private val caminho: String) {
                 it.execute("PRAGMA user_version = 5")
             }
         }
+        if (versao < 6) {
+            c.createStatement().use {
+                // Cronograma: a lista dos horários de fim de cada passo, para o servidor avisar com o app fechado. Some junto com o dispositivo.
+                it.execute(
+                    """CREATE TABLE cronograma_alarmes (
+                        dispositivo_id TEXT NOT NULL REFERENCES dispositivos(id) ON DELETE CASCADE,
+                        ordem INTEGER NOT NULL,
+                        em INTEGER NOT NULL,
+                        titulo TEXT NOT NULL,
+                        corpo TEXT NOT NULL,
+                        tentativas INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (dispositivo_id, ordem)
+                    )""",
+                )
+                it.execute("CREATE INDEX idx_cronograma_em ON cronograma_alarmes(em)")
+                it.execute("PRAGMA user_version = 6")
+            }
+        }
     }
 
     /** Esvazia o WAL, onde ainda ficam as versões antigas das páginas, depois de apagar dados pessoais. */
@@ -174,6 +198,9 @@ class Banco(private val caminho: String) {
     fun salvarInscricao(id: String, endpoint: String, p256dh: String, auth: String, agora: Long): Boolean = usar { c ->
         c.autoCommit = false
         try {
+            c.prepareStatement("DELETE FROM cronograma_alarmes WHERE dispositivo_id IN (SELECT id FROM dispositivos WHERE push_endpoint = ? AND id <> ?)").use {
+                it.setString(1, endpoint); it.setString(2, id); it.executeUpdate()
+            }
             c.prepareStatement("UPDATE dispositivos SET push_endpoint = NULL, push_p256dh = NULL, push_auth = NULL, alarme_em = NULL, alarme_fase = NULL, alarme_proxima = NULL, alarme_tentativas = 0 WHERE push_endpoint = ? AND id <> ?").use {
                 it.setString(1, endpoint); it.setString(2, id); it.executeUpdate()
             }
@@ -191,6 +218,7 @@ class Banco(private val caminho: String) {
     }
 
     fun removerInscricao(id: String) = usar { c ->
+        c.prepareStatement("DELETE FROM cronograma_alarmes WHERE dispositivo_id = ?").use { it.setString(1, id); it.executeUpdate() }
         c.prepareStatement("UPDATE dispositivos SET push_endpoint = NULL, push_p256dh = NULL, push_auth = NULL, alarme_em = NULL, alarme_fase = NULL, alarme_proxima = NULL, alarme_tentativas = 0 WHERE id = ?").use {
             it.setString(1, id); it.executeUpdate()
         }
@@ -283,6 +311,63 @@ class Banco(private val caminho: String) {
             it.setString(1, id)
             it.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) to rs.getString(2) else null }
         }
+    }
+
+    // ---------------------------------------------------------------- cronograma (fins de passo)
+
+    /** Substitui todo o cronograma do dispositivo (as ordens seguem a lista recebida). Lista vazia = cancela. */
+    fun definirCronograma(id: String, passos: List<PassoCronograma>) = usar { c ->
+        c.autoCommit = false
+        try {
+            c.prepareStatement("DELETE FROM cronograma_alarmes WHERE dispositivo_id = ?").use { it.setString(1, id); it.executeUpdate() }
+            c.prepareStatement("INSERT INTO cronograma_alarmes (dispositivo_id, ordem, em, titulo, corpo) VALUES (?,?,?,?,?)").use { ps ->
+                passos.forEachIndexed { i, p ->
+                    ps.setString(1, id); ps.setInt(2, i); ps.setLong(3, p.em); ps.setString(4, p.titulo); ps.setString(5, p.corpo); ps.addBatch()
+                }
+                ps.executeBatch()
+            }
+            c.commit()
+        } catch (e: Exception) {
+            c.rollback(); throw e
+        }
+    }
+
+    fun cancelarCronograma(id: String) = definirCronograma(id, emptyList())
+
+    fun cronogramaDe(id: String): List<PassoCronograma> = usar { c ->
+        c.prepareStatement("SELECT em, titulo, corpo FROM cronograma_alarmes WHERE dispositivo_id = ? ORDER BY ordem").use {
+            it.setString(1, id)
+            it.executeQuery().use { rs -> buildList { while (rs.next()) add(PassoCronograma(rs.getLong(1), rs.getString(2), rs.getString(3))) } }
+        }
+    }
+
+    /** Fins de passo cujo horário chegou, de quem tem inscrição de push, do mais antigo para o mais novo. */
+    fun cronogramaVencido(agora: Long): List<CronogramaVencido> = usar { c ->
+        c.prepareStatement(
+            "SELECT a.dispositivo_id, a.ordem, d.push_endpoint, d.push_p256dh, d.push_auth, a.em, a.titulo, a.corpo, a.tentativas " +
+                "FROM cronograma_alarmes a JOIN dispositivos d ON d.id = a.dispositivo_id " +
+                "WHERE a.em <= ? AND d.push_endpoint IS NOT NULL ORDER BY a.em, a.ordem",
+        ).use { ps ->
+            ps.setLong(1, agora)
+            ps.executeQuery().use { rs ->
+                buildList {
+                    while (rs.next()) add(CronogramaVencido(rs.getString(1), rs.getInt(2), Inscricao(rs.getString(3), rs.getString(4), rs.getString(5)), rs.getLong(6), rs.getString(7), rs.getString(8), rs.getInt(9)))
+                }
+            }
+        }
+    }
+
+    fun removerPassoCronograma(id: String, ordem: Int) = usar { c ->
+        c.prepareStatement("DELETE FROM cronograma_alarmes WHERE dispositivo_id = ? AND ordem = ?").use { it.setString(1, id); it.setInt(2, ordem); it.executeUpdate() }
+    }
+
+    fun registrarFalhaCronograma(id: String, ordem: Int) = usar { c ->
+        c.prepareStatement("UPDATE cronograma_alarmes SET tentativas = tentativas + 1 WHERE dispositivo_id = ? AND ordem = ?").use { it.setString(1, id); it.setInt(2, ordem); it.executeUpdate() }
+    }
+
+    /** Fim de passo que já passou do ponto de ser útil (ou ficou sem inscrição) não serve mais: apaga. Devolve quantos. */
+    fun limparCronogramaAntigo(antes: Long): Int = usar { c ->
+        c.prepareStatement("DELETE FROM cronograma_alarmes WHERE em < ?").use { it.setLong(1, antes); it.executeUpdate() }
     }
 
     /** Apaga quem não sincroniza há muito tempo (LGPD: não guardar dados parados). Devolve quantos foram apagados. */
