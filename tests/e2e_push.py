@@ -384,6 +384,18 @@ try:
         pg.click('#crono-parar'); pg.click('#crono-parar')
         check(espera(lambda: not cron_db()), 'parar (com confirmação) apaga todos os avisos')
         pg.click('#crono-fechar')
+        # com intervalo: um aviso para o fim de cada passo e outro para o fim de cada descanso (5 em vez de 3)
+        rotina['rotinas'][0]['intervalo'] = 30
+        pg.evaluate("(r) => localStorage.setItem('contagem-de-dias:cronograma', JSON.stringify(r))", rotina)
+        pg.reload(); pg.wait_for_selector('#crono-lista .card')
+        pg.click('#crono-lista button[data-act=crono-iniciar]'); pg.click('#crono-principal')
+        check(espera(lambda: len(cron_db()) == 5), 'com intervalo, o servidor recebe um aviso por passo e um por descanso')
+        c = cron_db()
+        check([c[i + 1][0] - c[i][0] for i in range(4)] == [30000, 300000, 30000, 300000], 'os horários incluem os descansos de 30 s')
+        check(c[0][1:] == ('Passo concluído', 'Prancha. Descanse 30 s. Próximo: Agachamento') and c[1][1:] == ('Descanso acabou', 'Agora: Agachamento · 5 min'), f'os textos do descanso vêm do app ({c[0][1:]}, {c[1][1:]})')
+        pg.click('#crono-parar'); pg.click('#crono-parar')
+        check(espera(lambda: not cron_db()), 'parar apaga também os avisos de descanso')
+        pg.click('#crono-fechar')
         # o push do cronograma: tag própria, vibra, sem botão de iniciar, e convive com os outros
         cdp0.send('ServiceWorker.enable')
         entregar0(json.dumps({'titulo': 'Passo concluído', 'corpo': 'Prancha. Agora: Agachamento · 5 min', 'tag': 'cronograma', 'url': './#cronograma'}))
