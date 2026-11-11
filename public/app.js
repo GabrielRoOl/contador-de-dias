@@ -1076,32 +1076,59 @@
     i.addEventListener('input', totalEditor);
     return i;
   }
-  function botaoPasso(rotulo, acao) {
+  function botaoPasso(simbolo, rotulo, acao) {
     var b = document.createElement('button');
-    b.type = 'button'; b.className = 'btn small'; b.textContent = rotulo;
+    b.type = 'button'; b.className = 'passo-btn'; b.textContent = simbolo;
+    b.setAttribute('aria-label', rotulo); b.title = rotulo;
     b.addEventListener('click', acao);
     return b;
   }
+  /* Cada passo é uma linha-resumo ("Agachamento · 5 min", com subir, descer e remover à direita) e, só enquanto
+     está aberto, os campos de edição. Ao adicionar outro passo, os anteriores fecham e viram só a linha. */
+  function resumoPasso(li) {
+    var nome = li.querySelector('.f-nome').value.trim(), seg = lerSegundos(li);
+    li.querySelector('.passo-texto').textContent = (nome || 'Novo passo') + (seg ? ' · ' + CR.formatarDuracao(seg) : '');
+  }
+  function abrirPasso(li, aberto) {
+    li.classList.toggle('aberto', aberto);
+    li.querySelector('.edicao').hidden = !aberto;
+    li.querySelector('.passo-texto').setAttribute('aria-expanded', aberto ? 'true' : 'false');
+    resumoPasso(li);
+  }
+  function fecharPassosPreenchidos(exceto) {
+    Array.prototype.forEach.call(elPassosEd.children, function (li) {
+      if (li !== exceto && li.querySelector('.f-nome').value.trim()) abrirPasso(li, false);
+    });
+  }
   function linhaPasso(p) {
     var li = document.createElement('li');
+    var topo = document.createElement('div'); topo.className = 'resumo';
+    var texto = document.createElement('button');
+    texto.type = 'button'; texto.className = 'passo-texto';
+    texto.addEventListener('click', function () { abrirPasso(li, !li.classList.contains('aberto')); });
+    var acoes = document.createElement('div'); acoes.className = 'acoes-passo';
+    acoes.appendChild(botaoPasso('\u2191', 'Subir', function () { if (li.previousElementSibling) elPassosEd.insertBefore(li, li.previousElementSibling); }));
+    acoes.appendChild(botaoPasso('\u2193', 'Descer', function () { if (li.nextElementSibling) elPassosEd.insertBefore(li.nextElementSibling, li); }));
+    acoes.appendChild(botaoPasso('\u00d7', 'Remover', function () {
+      if (elPassosEd.children.length > 1) li.remove(); else { nome.value = ''; li.querySelector('.f-min').value = ''; li.querySelector('.f-seg').value = ''; resumoPasso(li); }
+      totalEditor();
+    }));
+    topo.appendChild(texto); topo.appendChild(acoes);
+    var edicao = document.createElement('div'); edicao.className = 'edicao';
     var nome = document.createElement('input');
     nome.type = 'text'; nome.className = 'f-nome'; nome.maxLength = 40; nome.placeholder = 'Ex.: prancha'; nome.autocomplete = 'off';
     nome.setAttribute('aria-label', 'Nome do passo'); nome.value = p ? p.nome : '';
+    nome.addEventListener('input', function () { resumoPasso(li); });
     var linha = document.createElement('div'); linha.className = 'linha';
     var un1 = document.createElement('span'); un1.className = 'un'; un1.textContent = 'min';
     var un2 = document.createElement('span'); un2.className = 'un'; un2.textContent = 's';
-    linha.appendChild(campoNumero('f-min', 'Minutos', 120, p ? Math.floor(p.seg / 60) : ''));
-    linha.appendChild(un1);
-    linha.appendChild(campoNumero('f-seg', 'Segundos', 59, p ? p.seg % 60 : ''));
-    linha.appendChild(un2);
-    var acoes = document.createElement('div'); acoes.className = 'acoes-passo';
-    acoes.appendChild(botaoPasso('Subir', function () { if (li.previousElementSibling) elPassosEd.insertBefore(li, li.previousElementSibling); }));
-    acoes.appendChild(botaoPasso('Descer', function () { if (li.nextElementSibling) elPassosEd.insertBefore(li.nextElementSibling, li); }));
-    acoes.appendChild(botaoPasso('Remover', function () {
-      if (elPassosEd.children.length > 1) li.remove(); else { nome.value = ''; li.querySelector('.f-min').value = ''; li.querySelector('.f-seg').value = ''; }
-      totalEditor();
-    }));
-    li.appendChild(nome); li.appendChild(linha); li.appendChild(acoes);
+    var min = campoNumero('f-min', 'Minutos', 120, p ? Math.floor(p.seg / 60) : '');
+    var seg = campoNumero('f-seg', 'Segundos', 59, p ? p.seg % 60 : '');
+    min.addEventListener('input', function () { resumoPasso(li); }); seg.addEventListener('input', function () { resumoPasso(li); });
+    linha.appendChild(min); linha.appendChild(un1); linha.appendChild(seg); linha.appendChild(un2);
+    edicao.appendChild(nome); edicao.appendChild(linha);
+    li.appendChild(topo); li.appendChild(edicao);
+    abrirPasso(li, !p); // passo novo abre para editar; os já salvos entram fechados
     return li;
   }
   function abrirEditorCrono(r) {
@@ -1121,6 +1148,7 @@
   document.getElementById('crono-f-add').addEventListener('click', function () {
     if (elPassosEd.children.length >= CR.LIMITES.passos) { document.getElementById('crono-f-erro').textContent = 'No máximo ' + CR.LIMITES.passos + ' passos por cronograma.'; return; }
     var li = linhaPasso(null);
+    fecharPassosPreenchidos(null);
     elPassosEd.appendChild(li); totalEditor();
     li.querySelector('.f-nome').focus();
   });

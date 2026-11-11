@@ -329,9 +329,17 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(6px);
 .crono-passos li.feito { text-decoration: line-through; opacity: 0.65; }
 .crono-card-passos { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
 .crono-meta { margin: 0; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.crono-editor-passos { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.crono-editor-passos li { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.crono-editor-passos .linha, .crono-editor-passos .acoes-passo { display: flex; align-items: center; gap: 8px; }
+.crono-editor-passos { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.crono-editor-passos li { border: 1px solid var(--line); border-radius: 10px; padding: 0 4px 0 12px; }
+.crono-editor-passos li.aberto { border-color: var(--accent); }
+.crono-editor-passos .resumo { display: flex; align-items: center; gap: 4px; min-height: 44px; }
+.crono-editor-passos .passo-texto { flex: 1; min-width: 0; min-height: 44px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.crono-editor-passos .acoes-passo { display: flex; align-items: center; flex: none; }
+.crono-editor-passos .passo-btn { width: 36px; min-height: 44px; border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.crono-editor-passos .passo-btn:hover, .crono-editor-passos .passo-btn:active { color: var(--accent); }
+.crono-editor-passos .edicao { display: flex; flex-direction: column; gap: 6px; padding: 0 8px 12px 0; }
+.crono-editor-passos .edicao[hidden] { display: none; }
+.crono-editor-passos .linha { display: flex; align-items: center; gap: 8px; }
 .crono-editor-passos .linha input[type=number] { width: 72px; }
 .crono-editor-passos .un { font-size: 13px; color: var(--muted); }
 #tela-cronograma #crono-lista-area { display: flex; flex-direction: column; gap: 14px; }
