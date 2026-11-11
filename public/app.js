@@ -926,7 +926,7 @@
       var feitas = r.feitas === 0 ? 'Ainda não feito' : 'Feito ' + r.feitas + ' ' + plural(r.feitas, 'vez', 'vezes');
       return '<article class="card" data-id="' + esc(r.id) + '">' +
         '<h2 class="crono-titulo-card">' + esc(r.nome) + '</h2>' +
-        '<p class="crono-meta">' + r.passos.length + ' ' + plural(r.passos.length, 'passo', 'passos') + ' · ' + esc(CR.formatarDuracao(CR.totalSeg(r))) + ' · ' + esc(feitas) + '</p>' +
+        '<p class="crono-meta">' + r.passos.length + ' ' + plural(r.passos.length, 'passo', 'passos') + ' · ' + esc(CR.formatarDuracao(CR.totalSeg(r))) + (r.intervalo ? ' · intervalo ' + esc(CR.formatarDuracao(r.intervalo)) : '') + ' · ' + esc(feitas) + '</p>' +
         '<p class="crono-card-passos">' + r.passos.map(function (p) { return esc(p.nome) + ' ' + esc(CR.formatarDuracao(p.seg)); }).join(' · ') + '</p>' +
         '<div class="actions"><button class="btn primary" type="button" data-act="crono-iniciar">Iniciar</button>' +
         '<button class="btn" type="button" data-act="crono-editar">Editar</button></div></article>';
@@ -938,7 +938,7 @@
     var st = CR.status(crono), r = CR.rotinaDaSessao(crono);
     if (!st) return;
     var rest = CR.restante(crono, Date.now());
-    var dur = st === 'concluido' ? 1 : r.passos[crono.sessao.passo].seg * 1000;
+    var dur = st === 'concluido' ? 1 : CR.duracaoFase(crono);
     var txt = CR.formatarTempo(rest);
     if (elCr.tempo.textContent !== txt) elCr.tempo.textContent = txt;
     elCr.arco.setAttribute('stroke-dasharray', (st === 'concluido' ? 100 : Math.round((1 - rest / dur) * 1000) / 10) + ' 100');
@@ -952,11 +952,15 @@
     if (!st) { cronoRenderLista(); return; }
     var passo = crono.sessao.passo, n = r.passos.length;
     elCr.nome.textContent = r.nome;
-    elCr.passo.textContent = st === 'concluido' ? 'Tudo feito' : 'Passo ' + (passo + 1) + ' de ' + n + ' · ' + r.passos[passo].nome;
+    var descansando = st !== 'concluido' && crono.sessao.descanso;
+    elCr.exec.classList.toggle('descanso', descansando);
+    elCr.passo.textContent = st === 'concluido' ? 'Tudo feito'
+      : descansando ? 'Descanso · próximo: ' + r.passos[passo].nome
+      : 'Passo ' + (passo + 1) + ' de ' + n + ' · ' + r.passos[passo].nome;
     elCr.passos.textContent = '';
     r.passos.forEach(function (p, i) {
       var li = document.createElement('li');
-      li.className = i < passo ? 'feito' : (i === passo && st !== 'concluido' ? 'atual' : '');
+      li.className = i < passo ? 'feito' : (i === passo && st !== 'concluido' ? (descansando ? 'proximo' : 'atual') : '');
       var a = document.createElement('span'); a.textContent = p.nome;
       var b = document.createElement('span'); b.textContent = CR.formatarDuracao(p.seg);
       li.appendChild(a); li.appendChild(b);
@@ -1006,8 +1010,10 @@
     crono = r.estado;
     cronoSalvar();
     var c = r.concluiu, rotina = CR.rotinaDaSessao(crono);
-    cronoUi.msg = c.terminou ? '' : 'Passo concluído. Agora: ' + rotina.passos[crono.sessao.passo].nome + '.'; // ao concluir vale o texto padrão, com as vezes feitas
-    if (agora - c.em < 8000) alertarFim(c.terminou ? 'Cronograma concluído' : 'Passo concluído');
+    var acabou = c.passos[c.passos.length - 1], prox = c.terminou ? null : rotina.passos[crono.sessao.passo].nome;
+    cronoUi.msg = c.terminou ? '' : crono.sessao.descanso ? 'Passo concluído. Descanse e depois: ' + prox + '.'
+      : acabou.descanso ? 'Descanso acabou. Agora: ' + prox + '.' : 'Passo concluído. Agora: ' + prox + '.'; // ao concluir vale o texto padrão, com as vezes feitas
+    if (agora - c.em < 8000) alertarFim(c.terminou ? 'Cronograma concluído' : acabou.descanso ? 'Descanso acabou' : 'Passo concluído');
     cronoAgendar();
     cronoRender();
   }
@@ -1059,9 +1065,26 @@
   var elPassosEd = document.getElementById('crono-f-passos');
   var cronoEditando = null; // id da rotina em edição, ou null para uma nova
   var cronoExcluirArmado = null;
+  var cronoIntervalo = 0; // intervalo (s) escolhido no editor
+  var elIv = document.getElementById('crono-f-iv'), elIvOpcoes = document.getElementById('crono-f-iv-opcoes');
+  function rotuloIntervalo(seg) { return seg ? CR.formatarDuracao(seg).replace(/^60 s$/, '1 min') : 'Sem intervalo'; }
+  function escolherIntervalo(seg) {
+    cronoIntervalo = seg;
+    elIv.textContent = seg ? 'Intervalo: ' + rotuloIntervalo(seg) : 'Sem intervalo';
+    Array.prototype.forEach.call(elIvOpcoes.children, function (b) { b.setAttribute('aria-checked', Number(b.getAttribute('data-seg')) === seg ? 'true' : 'false'); });
+    totalEditor();
+  }
+  function abrirOpcoesIntervalo(abrir) { elIvOpcoes.hidden = !abrir; elIv.setAttribute('aria-expanded', abrir ? 'true' : 'false'); }
+  CR.INTERVALOS.forEach(function (seg) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('data-seg', String(seg)); b.textContent = rotuloIntervalo(seg);
+    b.addEventListener('click', function () { escolherIntervalo(seg); abrirOpcoesIntervalo(false); elIv.focus(); });
+    elIvOpcoes.appendChild(b);
+  });
+  elIv.addEventListener('click', function () { abrirOpcoesIntervalo(elIvOpcoes.hidden); });
 
   function totalEditor() {
-    var n = elPassosEd.children.length, seg = 0;
+    var n = elPassosEd.children.length, seg = cronoIntervalo * Math.max(0, n - 1);
     Array.prototype.forEach.call(elPassosEd.children, function (li) { seg += lerSegundos(li); });
     document.getElementById('crono-f-total').textContent = n + ' ' + plural(n, 'passo', 'passos') + ' · total ' + CR.formatarDuracao(seg);
   }
@@ -1136,12 +1159,13 @@
     cronoExcluirArmado = null;
     document.getElementById('crono-editor-titulo').textContent = r ? 'Editar cronograma' : 'Novo cronograma';
     document.getElementById('crono-f-nome').value = r ? r.nome : '';
+    abrirOpcoesIntervalo(false);
     document.getElementById('crono-f-erro').textContent = '';
     var ex = document.getElementById('crono-f-excluir');
     ex.hidden = !r; ex.textContent = 'Excluir';
     elPassosEd.textContent = '';
     (r ? r.passos : [null]).forEach(function (p) { elPassosEd.appendChild(linhaPasso(p)); });
-    totalEditor();
+    escolherIntervalo(r ? r.intervalo || 0 : 0);
     dlgCr.showModal();
   }
   document.getElementById('crono-novo').addEventListener('click', function () { abrirEditorCrono(null); });
@@ -1155,7 +1179,7 @@
   document.getElementById('crono-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var erro = document.getElementById('crono-f-erro');
-    var dados = { nome: document.getElementById('crono-f-nome').value,
+    var dados = { nome: document.getElementById('crono-f-nome').value, intervalo: cronoIntervalo,
       passos: Array.prototype.map.call(elPassosEd.children, function (li) { return { nome: li.querySelector('.f-nome').value, seg: lerSegundos(li) }; }) };
     try {
       crono = cronoEditando ? CR.atualizarRotina(crono, cronoEditando, dados) : CR.criarRotina(crono, dados, novoIdCrono());

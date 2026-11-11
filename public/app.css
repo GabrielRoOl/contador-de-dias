@@ -329,6 +329,13 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(6px);
 .crono-passos li.feito { text-decoration: line-through; opacity: 0.65; }
 .crono-card-passos { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
 .crono-meta { margin: 0; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.crono-iv-atual { align-self: flex-start; }
+.crono-iv-opcoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.crono-iv-opcoes[hidden] { display: none; }
+.crono-iv-opcoes button { min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: none; color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.crono-iv-opcoes button[aria-checked=true] { border-color: var(--accent); color: var(--accent); }
+#crono-exec.descanso #crono-arco { stroke: var(--r-semana); }
+.crono-passos li.proximo { color: var(--ink); border-style: dashed; border-color: var(--accent); }
 .crono-editor-passos { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .crono-editor-passos li { border: 1px solid var(--line); border-radius: 10px; padding: 0 4px 0 12px; }
 .crono-editor-passos li.aberto { border-color: var(--accent); }
