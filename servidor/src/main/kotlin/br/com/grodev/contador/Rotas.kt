@@ -44,6 +44,8 @@ import java.security.MessageDigest
 @Serializable data class RespostaConviteCriado(val id: String, val codigo: String, val expiraEm: Long)
 @Serializable data class ItemConvite(val id: String, val nome: String, val estado: String, val criadoEm: Long, val expiraEm: Long, val usadoEm: Long? = null)
 @Serializable data class PedidoAlarme(val em: Long, val fase: String, val proxima: String)
+@Serializable data class PedidoCronograma(val passos: List<PedidoPasso>)
+@Serializable data class PedidoPasso(val em: Long, val titulo: String, val corpo: String = "")
 @Serializable data class RespostaErro(val erro: String, val detalhes: List<String> = emptyList())
 @Serializable data class ChavesInscricao(val p256dh: String, val auth: String)
 @Serializable data class InscricaoPush(val endpoint: String, val keys: ChavesInscricao)
@@ -58,6 +60,7 @@ const val MAX_CONVITES_PENDENTES = 10
 const val VALIDADE_CONVITE_MS = 7L * 24 * 3_600_000
 private const val MAX_CORPO_CONVITE = 1024
 private const val MAX_CORPO_ALARME = 512
+private const val MAX_CORPO_CRONOGRAMA = 16 * 1024
 const val LIMITE_ALARME_POR_HORA = 120
 const val ALARME_ATRASO_MAX_MS = 60_000L
 const val ALARME_ANTECEDENCIA_MAX_MS = 2L * 3_600_000
@@ -291,6 +294,40 @@ fun Application.modulo(
                             return@delete call.erro(HttpStatusCode.TooManyRequests, "Muitas alterações de alarme. Tente mais tarde.")
                         }
                         banco.cancelarAlarme(d.id)
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+                }
+
+                route("/cronograma") {
+                    /** Substitui o cronograma: `passos` são os fins de passo (horário em ms + texto do aviso), em ordem. */
+                    put {
+                        val d = autenticar(call, call.parameters["id"]) ?: return@put
+                        if (chaves == null) return@put call.erro(HttpStatusCode.ServiceUnavailable, "Notificações não configuradas neste servidor.")
+                        if (!call.ehJson()) return@put call.erro(HttpStatusCode.UnsupportedMediaType, "Envie application/json.")
+                        val texto = call.corpoLimitado(MAX_CORPO_CRONOGRAMA) ?: return@put call.erro(HttpStatusCode.PayloadTooLarge, "Corpo grande demais.")
+                        val pedido = try { json.decodeFromString(PedidoCronograma.serializer(), texto) } catch (e: Exception) {
+                            return@put call.erro(HttpStatusCode.BadRequest, "JSON inválido.")
+                        }
+                        val passos = pedido.passos.map { PassoCronograma(it.em, it.titulo.trim(), it.corpo.trim()) }
+                        val problemas = Validacao.errosCronograma(passos, relogio())
+                        if (problemas.isNotEmpty()) return@put call.erro(HttpStatusCode.BadRequest, "Cronograma inválido.", problemas)
+                        if (!d.temInscricao) return@put call.erro(HttpStatusCode.Conflict, "Este aparelho não tem inscrição de push.")
+                        if (!limiteAlarme.permitir("alarme:" + d.id)) {
+                            call.response.header(HttpHeaders.RetryAfter, "3600")
+                            return@put call.erro(HttpStatusCode.TooManyRequests, "Muitas alterações de alarme. Tente mais tarde.")
+                        }
+                        banco.definirCronograma(d.id, passos)
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+
+                    /** Idempotente: sem cronograma também responde 204. */
+                    delete {
+                        val d = autenticar(call, call.parameters["id"]) ?: return@delete
+                        if (!limiteAlarme.permitir("alarme:" + d.id)) {
+                            call.response.header(HttpHeaders.RetryAfter, "3600")
+                            return@delete call.erro(HttpStatusCode.TooManyRequests, "Muitas alterações de alarme. Tente mais tarde.")
+                        }
+                        banco.cancelarCronograma(d.id)
                         call.respond(HttpStatusCode.NoContent)
                     }
                 }
