@@ -467,6 +467,11 @@ try:
         pc.click('#crono-f-add'); passo(1).locator('.f-nome').fill('Agachamento'); passo(1).locator('.f-min').fill('5')
         pc.click('#crono-f-add'); passo(2).locator('.f-nome').fill('Flexão'); passo(2).locator('.f-min').fill('5')
         check('3 passos · total 12 min' == pc.locator('#crono-f-total').inner_text(), 'cronograma: o editor soma o total dos passos')
+        check(passo(0).locator('.passo-texto').text_content() == 'Prancha · 2 min' and passo(1).locator('.passo-texto').text_content() == 'Agachamento · 5 min'
+              and not passo(0).locator('.f-nome').is_visible() and not passo(1).locator('.f-nome').is_visible() and passo(2).locator('.f-nome').is_visible(), 'cronograma: ao adicionar outro passo, os anteriores viram uma linha-resumo e só o novo fica aberto')
+        passo(0).locator('.passo-texto').click()
+        check(passo(0).locator('.f-nome').is_visible() and passo(0).locator('.passo-texto').get_attribute('aria-expanded') == 'true', 'cronograma: tocar na linha-resumo reabre o passo para editar')
+        passo(0).locator('.passo-texto').click()
         passo(2).get_by_role('button', name='Subir').click()
         check(passo(1).locator('.f-nome').input_value() == 'Flexão' and passo(2).locator('.f-nome').input_value() == 'Agachamento', 'cronograma: Subir reordena os passos')
         passo(1).get_by_role('button', name='Descer').click()
