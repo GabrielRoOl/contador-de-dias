@@ -173,6 +173,12 @@ async function botao(acao, estado, opc = {}) {
 const rodandoFoco = (extra = {}) => { const t = Date.now(); return { ...global.__P.iniciar(global.__P.novo(), t - 5 * MIN), ...extra }; };
 global.__P = require('../public/pomodoro.js');
 
+test('push do cronograma: toca e vibra, sem botão de iniciar', async () => {
+  const [n] = await push(JSON.stringify({ titulo: 'Passo concluído', corpo: 'Prancha. Agora: Flexão · 5 min', tag: 'cronograma', url: './#cronograma', proxima: 'pausa' }));
+  assert.equal(n.tag, 'cronograma'); assert.equal(n.silent, false); assert.equal(n.vibrate.length, 5);
+  assert.equal(n.actions, undefined); assert.equal(n.data.url, SCOPE + '#cronograma');
+});
+
 test('botão Pausar: pausa, mostra "(pausado)" com Continuar/Parar, cancela o alarme no servidor e avisa as janelas', async () => {
   const r = await botao('pausar', rodandoFoco());
   assert.equal(r.guardado.get('pomodoro').rodando, false);
