@@ -28,6 +28,12 @@ object MensagensPomodoro {
         ) else Aviso("Pausa concluída", "Pronto para o próximo foco?", TAG)
 }
 
+/** O aviso de fim de passo do cronograma: o texto vem pronto do app (o servidor não sabe o que são os passos). */
+object MensagensCronograma {
+    const val TAG = "cronograma"
+    const val URL = "./#cronograma"
+}
+
 data class ResumoAlarmes(val enviados: Int = 0, val falhas: Int = 0, val expirados: Int = 0, val descartados: Int = 0)
 
 /**
@@ -52,12 +58,14 @@ class AgendadorAlarmes(
 
     suspend fun executarRodada(): ResumoAlarmes {
         val agora = relogio()
-        val antigos = withContext(despachante) { banco.limparAlarmesAntigos(agora - ttlSegundos * 1000L) }
+        val antigos = withContext(despachante) { banco.limparAlarmesAntigos(agora - ttlSegundos * 1000L) + banco.limparCronogramaAntigo(agora - ttlSegundos * 1000L) }
         val vencidos = withContext(despachante) { banco.alarmesVencidos(agora) }
-        if (vencidos.isEmpty()) return ResumoAlarmes(descartados = antigos)
+        val passos = withContext(despachante) { banco.cronogramaVencido(agora) }
+        if (vencidos.isEmpty() && passos.isEmpty()) return ResumoAlarmes(descartados = antigos)
         val limite = Semaphore(paralelismo)
         val resultados = coroutineScope {
-            vencidos.map { a -> async(despachante) { limite.withPermit { enviarPara(a) } } }.awaitAll()
+            vencidos.map { a -> async(despachante) { limite.withPermit { enviarPara(a) } } }.awaitAll() +
+                passos.map { p -> async(despachante) { limite.withPermit { enviarPasso(p) } } }.awaitAll()
         }
         return ResumoAlarmes(
             enviados = resultados.count { it == Destino.ENVIADO },
@@ -88,6 +96,30 @@ class AgendadorAlarmes(
             }
         } catch (e: Exception) {
             log.error("dispositivo {}: erro inesperado no alarme: {}", rotulo, e.javaClass.simpleName)
+            return Destino.FALHA
+        }
+    }
+
+    private fun enviarPasso(p: CronogramaVencido): Destino {
+        val rotulo = p.id.take(6)
+        try {
+            val carga = json.encodeToString(CargaAviso.serializer(), CargaAviso(p.titulo, p.corpo, MensagensCronograma.TAG, MensagensCronograma.URL))
+            val resultado = try {
+                enviador.enviar(p.inscricao, carga.toByteArray(Charsets.UTF_8), ttlSegundos, MensagensCronograma.TAG)
+            } catch (e: Exception) {
+                ResultadoEnvio.Falha("erro: ${e.javaClass.simpleName}")
+            }
+            return when (resultado) {
+                ResultadoEnvio.Sucesso -> { banco.removerPassoCronograma(p.id, p.ordem); log.info("dispositivo {}: aviso de passo do cronograma enviado", rotulo); Destino.ENVIADO }
+                ResultadoEnvio.Expirada -> { banco.removerInscricao(p.id); log.info("dispositivo {}: inscrição expirada, removida", rotulo); Destino.EXPIRADO }
+                is ResultadoEnvio.Falha -> {
+                    if (p.tentativas + 1 >= maxTentativas) banco.removerPassoCronograma(p.id, p.ordem) else banco.registrarFalhaCronograma(p.id, p.ordem)
+                    log.warn("dispositivo {}: falha no aviso do cronograma ({}), tentativa {} de {}", rotulo, resultado.motivo, p.tentativas + 1, maxTentativas)
+                    Destino.FALHA
+                }
+            }
+        } catch (e: Exception) {
+            log.error("dispositivo {}: erro inesperado no cronograma: {}", rotulo, e.javaClass.simpleName)
             return Destino.FALHA
         }
     }
