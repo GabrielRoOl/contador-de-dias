@@ -46,6 +46,20 @@ def pomodoro(fase='foco', rodando=True, restante_ms=18 * 60000 + 32000, ciclo=2)
     return e
 
 
+def cronogramas(rodando=False):
+    """Dois cronogramas de exemplo; com rodando=True o "Treino rápido" está no 2º passo, a 4 min 12 s do fim."""
+    rotinas = [
+        {'id': 'r1', 'nome': 'Treino rápido', 'feitas': 6, 'ultima': (AGORA - DIA).date().isoformat(),
+         'passos': [{'nome': 'Prancha', 'seg': 120}, {'nome': 'Agachamento', 'seg': 300}, {'nome': 'Flexão', 'seg': 300}]},
+        {'id': 'r2', 'nome': 'Alongamento da manhã', 'feitas': 2, 'ultima': (AGORA - 3 * DIA).date().isoformat(),
+         'passos': [{'nome': 'Pescoço', 'seg': 60}, {'nome': 'Ombros', 'seg': 90}, {'nome': 'Costas', 'seg': 120}, {'nome': 'Pernas', 'seg': 120}]},
+    ]
+    sessao = None
+    if rodando:
+        sessao = {'rotinaId': 'r1', 'passo': 1, 'rodando': True, 'fimEm': MS(AGORA) + (4 * 60 + 12) * 1000, 'restanteMs': 300000, 'atualizadoEm': 0}
+    return {'versao': 1, 'rotinas': rotinas, 'sessao': sessao}
+
+
 def porta_livre():
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))
@@ -59,14 +73,15 @@ time.sleep(1)
 URL = f'http://127.0.0.1:{PORTA}/'
 
 
-def abrir(b, esquema, modo, pomo=None, hash_=''):
+def abrir(b, esquema, modo, pomo=None, hash_='', crono=None):
     ctx = b.new_context(viewport={'width': 390, 'height': 900 if not hash_ else 844}, device_scale_factor=2, color_scheme=esquema, service_workers='block', locale='pt-BR', timezone_id='America/Sao_Paulo')
     ctx.add_init_script(f"localStorage.setItem('contagem-de-dias:v2', {json.dumps(json.dumps(estado(modo)))});"
-                        + (f"localStorage.setItem('contagem-de-dias:pomodoro', {json.dumps(json.dumps(pomo))});" if pomo else ''))
+                        + (f"localStorage.setItem('contagem-de-dias:pomodoro', {json.dumps(json.dumps(pomo))});" if pomo else '')
+                        + (f"localStorage.setItem('contagem-de-dias:cronograma', {json.dumps(json.dumps(crono))});" if crono else ''))
     pg = ctx.new_page()
     pg.clock.install(time=AGORA)
     pg.goto(URL + hash_)
-    pg.wait_for_selector('#tela-pomodoro:not([hidden])' if hash_ else '#list .card')
+    pg.wait_for_selector({'#pomodoro': '#tela-pomodoro:not([hidden])', '#cronograma': '#tela-cronograma:not([hidden])'}.get(hash_, '#list .card'))
     pg.clock.pause_at(AGORA + datetime.timedelta(seconds=2))
     pg.wait_for_timeout(600)
     return ctx, pg
@@ -96,6 +111,8 @@ try:
         ctx, pg = abrir(b, 'dark', 'escuro', pomodoro(), '#pomodoro'); foto(pg, 'pomodoro-foco')
         pg.click('#pomo-historico-abrir'); pg.wait_for_timeout(400); foto(pg, 'pomodoro-estatisticas'); ctx.close()
         ctx, pg = abrir(b, 'light', 'claro', pomodoro('pausa', False, 5 * 60000 - 90000, 2), '#pomodoro'); foto(pg, 'pomodoro-pausa'); ctx.close()
+        ctx, pg = abrir(b, 'light', 'claro', hash_='#cronograma', crono=cronogramas()); foto(pg, 'cronograma-lista'); ctx.close()
+        ctx, pg = abrir(b, 'dark', 'escuro', hash_='#cronograma', crono=cronogramas(True)); foto(pg, 'cronograma-execucao'); ctx.close()
         b.close()
 finally:
     servidor.terminate()
