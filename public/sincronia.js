@@ -348,6 +348,37 @@
       });
     }
 
+    /* ---------- cronograma: um aviso do servidor por fim de passo ---------- */
+    /* `lista` é [{em, titulo, corpo}] (vazia = sem cronograma). Como o alarme do Pomodoro: pode ser chamado a cada segundo,
+       só vai à rede se for diferente do que o servidor já tem, e uma falha espera um pouco antes de repetir o mesmo pedido. */
+    var cronoVoando = false;
+    var cronoDesejo = [];
+    var cronoFalha = null; // {chave, ate}
+    function chaveCrono(l) { return l.length ? JSON.stringify(l) : 'nenhum'; }
+    function cronograma(lista) {
+      cronoDesejo = (lista || []).map(function (p) { return { em: p.em, titulo: p.titulo, corpo: p.corpo }; });
+      return cronoVoando ? Promise.resolve() : conciliarCrono();
+    }
+    function conciliarCrono() {
+      if (!cred || !cred.ativo) return Promise.resolve();
+      var d = cronoDesejo, atual = cred.cronograma || 'nenhum', chave = chaveCrono(d);
+      if (chave === atual) return Promise.resolve();
+      if (cronoFalha && cronoFalha.chave === chave && agora() < cronoFalha.ate) return Promise.resolve();
+      cronoVoando = true;
+      var req = d.length ? pedir('PUT', caminhoDispositivo('/cronograma'), { passos: d }, { auth: true }) : pedir('DELETE', caminhoDispositivo('/cronograma'), undefined, { auth: true });
+      return req.then(function (resp) {
+        if (resp.status === 401) { esquecer(); return false; }
+        if (resp.status !== 204 || !cred) return false;
+        if (d.length) cred.cronograma = chave; else delete cred.cronograma;
+        gravar();
+        return true;
+      }, function () { return false; }).then(function (ok) {
+        cronoVoando = false;
+        if (!ok) cronoFalha = { chave: chave, ate: agora() + ESPERA_ALARME_MS };
+        if (chaveCrono(cronoDesejo) !== chave) return conciliarCrono(); // o app pediu outra coisa durante o pedido
+      });
+    }
+
     /* ---------- convites (só o aparelho administrador) ---------- */
     function motivoDe(resp) { return resp.status === 429 ? 'limite' : 'servidor'; }
     function comoAdministrador(metodo, sufixo, corpo, tratar) {
@@ -382,7 +413,7 @@
 
     return {
       convites: convites, criarConvite: criarConvite, revogarConvite: revogarConvite,
-      status: status, ativar: ativar, desativar: desativar, agendar: agendar, retomar: retomar, alarme: alarme,
+      status: status, ativar: ativar, desativar: desativar, agendar: agendar, retomar: retomar, alarme: alarme, cronograma: cronograma,
       descarregar: descarregar, verificar: verificar,
       ouvir: function (f) { ouvintes.push(f); },
       convitePendente: convitePendente, guardarConvite: guardarConvite, descartarConvite: descartarConvite,
