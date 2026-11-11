@@ -1067,18 +1067,18 @@
   var cronoExcluirArmado = null;
   var cronoIntervalo = 0; // intervalo (s) escolhido no editor
   var elIv = document.getElementById('crono-f-iv'), elIvOpcoes = document.getElementById('crono-f-iv-opcoes');
-  function rotuloIntervalo(seg) { return seg ? CR.formatarDuracao(seg).replace(/^60 s$/, '1 min') : 'Sem intervalo'; }
   function escolherIntervalo(seg) {
     cronoIntervalo = seg;
-    elIv.textContent = seg ? 'Intervalo: ' + rotuloIntervalo(seg) : 'Sem intervalo';
+    elIv.textContent = seg ? 'Intervalo: ' + seg + ' s' : 'Sem intervalo';
     Array.prototype.forEach.call(elIvOpcoes.children, function (b) { b.setAttribute('aria-checked', Number(b.getAttribute('data-seg')) === seg ? 'true' : 'false'); });
     totalEditor();
   }
   function abrirOpcoesIntervalo(abrir) { elIvOpcoes.hidden = !abrir; elIv.setAttribute('aria-expanded', abrir ? 'true' : 'false'); }
-  CR.INTERVALOS.forEach(function (seg) {
+  /* O botão mostra o valor atual e abre só as opções de tempo; tocar na opção já marcada desliga o intervalo. */
+  CR.INTERVALOS.filter(function (seg) { return seg > 0; }).forEach(function (seg) {
     var b = document.createElement('button');
-    b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('data-seg', String(seg)); b.textContent = rotuloIntervalo(seg);
-    b.addEventListener('click', function () { escolherIntervalo(seg); abrirOpcoesIntervalo(false); elIv.focus(); });
+    b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('data-seg', String(seg)); b.textContent = seg + ' s';
+    b.addEventListener('click', function () { escolherIntervalo(cronoIntervalo === seg ? 0 : seg); abrirOpcoesIntervalo(false); elIv.focus(); });
     elIvOpcoes.appendChild(b);
   });
   elIv.addEventListener('click', function () { abrirOpcoesIntervalo(elIvOpcoes.hidden); });

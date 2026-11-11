@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="app.css?v=35">
+<link rel="stylesheet" href="app.css?v=36">
 <script>try{var p=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias,r=document.documentElement;if(p.visual)r.setAttribute('data-visual',p.visual);if(p.modo==='claro')r.setAttribute('data-theme','light');else if(p.modo==='escuro')r.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
@@ -247,8 +247,10 @@
     </div>
     <div class="field">
       <span class="rotulo" id="crono-f-iv-rotulo">Intervalo entre os passos</span>
-      <button class="btn small crono-iv-atual" type="button" id="crono-f-iv" aria-expanded="false" aria-controls="crono-f-iv-opcoes" aria-labelledby="crono-f-iv-rotulo crono-f-iv">Sem intervalo</button>
-      <div class="crono-iv-opcoes" id="crono-f-iv-opcoes" role="radiogroup" aria-labelledby="crono-f-iv-rotulo" hidden></div>
+      <div class="crono-iv">
+        <button class="btn small crono-iv-atual" type="button" id="crono-f-iv" aria-expanded="false" aria-controls="crono-f-iv-opcoes" aria-labelledby="crono-f-iv-rotulo crono-f-iv">Sem intervalo</button>
+        <div class="crono-iv-opcoes" id="crono-f-iv-opcoes" role="radiogroup" aria-labelledby="crono-f-iv-rotulo" hidden></div>
+      </div>
     </div>
     <div class="field">
       <span class="rotulo" id="crono-f-passos-rotulo">Passos, na ordem</span>
@@ -289,12 +291,12 @@
   </div>
 </dialog>
 
-<script src="logica.js?v=35"></script>
-<script src="textos.js?v=35"></script>
-<script src="pomodoro.js?v=35"></script>
-<script src="cronograma.js?v=35"></script>
-<script src="armazem.js?v=35"></script>
-<script src="sincronia.js?v=35"></script>
-<script src="app.js?v=35"></script>
+<script src="logica.js?v=36"></script>
+<script src="textos.js?v=36"></script>
+<script src="pomodoro.js?v=36"></script>
+<script src="cronograma.js?v=36"></script>
+<script src="armazem.js?v=36"></script>
+<script src="sincronia.js?v=36"></script>
+<script src="app.js?v=36"></script>
 </body>
 </html>
