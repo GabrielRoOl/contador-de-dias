@@ -677,4 +677,78 @@ class RotasTest {
         assertEquals(HttpStatusCode.NoContent, c.delete("/contador/api/dispositivos/$b") { header(HttpHeaders.Authorization, "Bearer $segB") }.status)
         assertNull(banco.alarmeDe(b))
     }
+
+    // ---------------------------------------------------------------- cronograma
+
+    private fun corpoCronograma(vararg passos: Triple<Long, String, String>) =
+        """{"passos":[""" + passos.joinToString(",") { (em, t, c) -> """{"em":$em,"titulo":"$t","corpo":"$c"}""" } + "]}"
+
+    @Test fun `grava o cronograma, substitui e DELETE cancela`() = comApp { c ->
+        val (id, segredo) = c.inscrito()
+        val url = "/contador/api/dispositivos/$id/cronograma"
+        val corpo = corpoCronograma(Triple(agora + 120_000, "Passo concluído", "Prancha. Agora: Flexão · 5 min"), Triple(agora + 420_000, "Cronograma concluído", "Treino"))
+        assertEquals(HttpStatusCode.NoContent, c.putJson(url, corpo, segredo).status)
+        assertEquals(listOf(agora + 120_000, agora + 420_000), banco.cronogramaDe(id).map { it.em })
+        assertEquals(HttpStatusCode.NoContent, c.putJson(url, corpoCronograma(Triple(agora + 60_000, "Só um", "")), segredo).status)
+        assertEquals(1, banco.cronogramaDe(id).size)
+        assertEquals(HttpStatusCode.NoContent, c.delete(url) { header(HttpHeaders.Authorization, "Bearer $segredo") }.status)
+        assertTrue(banco.cronogramaDe(id).isEmpty())
+        assertEquals(HttpStatusCode.NoContent, c.delete(url) { header(HttpHeaders.Authorization, "Bearer $segredo") }.status, "idempotente")
+    }
+
+    @Test fun `cronograma exige o segredo do dispositivo e não mexe no de outro`() = comApp { c ->
+        val (id, segredo) = c.inscrito()
+        val (_, outro) = c.novo()
+        val url = "/contador/api/dispositivos/$id/cronograma"
+        val corpo = corpoCronograma(Triple(agora + 60_000, "a", ""))
+        assertEquals(HttpStatusCode.Unauthorized, c.putJson(url, corpo, null).status)
+        assertEquals(HttpStatusCode.Unauthorized, c.putJson(url, corpo, outro).status)
+        assertEquals(HttpStatusCode.Unauthorized, c.delete(url).status)
+        assertTrue(banco.cronogramaDe(id).isEmpty())
+        c.putJson(url, corpo, segredo)
+        assertEquals(HttpStatusCode.Unauthorized, c.delete(url) { header(HttpHeaders.Authorization, "Bearer $outro") }.status)
+        assertEquals(1, banco.cronogramaDe(id).size)
+    }
+
+    @Test fun `cronograma recusa horário fora da janela, fora de ordem, texto ruim e passos demais`() = comApp { c ->
+        val (id, segredo) = c.inscrito()
+        val url = "/contador/api/dispositivos/$id/cronograma"
+        val ok = Triple(agora + 60_000, "a", "b")
+        val ruins = listOf(
+            corpoCronograma(Triple(agora - 61_000, "a", "")),
+            corpoCronograma(Triple(agora + 24 * 3_600_000 + 1_000, "a", "")),
+            corpoCronograma(Triple(agora + 200_000, "a", ""), Triple(agora + 100_000, "b", "")),
+            corpoCronograma(Triple(agora + 60_000, "", "")),
+            corpoCronograma(Triple(agora + 60_000, "x".repeat(61), "")),
+            corpoCronograma(Triple(agora + 60_000, "a", "y".repeat(161))),
+            corpoCronograma(Triple(agora + 60_000, "a\\u0007b", "")),
+            """{"passos":[]}""", """{"passos":"x"}""", "[]", "nada",
+            corpoCronograma(*Array(21) { Triple(agora + 60_000L + it, "p", "") }),
+        )
+        ruins.forEach { assertEquals(HttpStatusCode.BadRequest, c.putJson(url, it, segredo).status, it.take(80)) }
+        assertTrue(banco.cronogramaDe(id).isEmpty())
+        assertEquals(HttpStatusCode.NoContent, c.putJson(url, corpoCronograma(*Array(20) { Triple(agora + 60_000L + it, "p", "") }), segredo).status, "20 passos pode")
+        assertEquals(HttpStatusCode.UnsupportedMediaType, c.putJson(url, corpoCronograma(ok), segredo, ContentType.Text.Plain).status)
+        assertEquals(HttpStatusCode.PayloadTooLarge, c.putJson(url, corpoCronograma(ok) + " ".repeat(17_000), segredo).status)
+    }
+
+    @Test fun `cronograma sem inscrição dá 409 e sem VAPID dá 503`() {
+        comApp { c ->
+            val (id, segredo) = c.novo()
+            assertEquals(HttpStatusCode.Conflict, c.putJson("/contador/api/dispositivos/$id/cronograma", corpoCronograma(Triple(agora + 60_000, "a", "")), segredo).status)
+        }
+        comApp(vapid = null) { c ->
+            val (id, segredo) = c.novo()
+            assertEquals(HttpStatusCode.ServiceUnavailable, c.putJson("/contador/api/dispositivos/$id/cronograma", corpoCronograma(Triple(agora + 60_000, "a", "")), segredo).status)
+        }
+    }
+
+    @Test fun `cronograma conta no mesmo limite de alterações de alarme`() = comApp(alarmes = LimitadorTaxa(2, 3_600_000) { agora }) { c ->
+        val (id, segredo) = c.inscrito()
+        val url = "/contador/api/dispositivos/$id/cronograma"
+        val corpo = corpoCronograma(Triple(agora + 60_000, "a", ""))
+        repeat(2) { assertEquals(HttpStatusCode.NoContent, c.putJson(url, corpo, segredo).status) }
+        val r = c.putJson(url, corpo, segredo)
+        assertEquals(HttpStatusCode.TooManyRequests, r.status); assertEquals("3600", r.headers[HttpHeaders.RetryAfter])
+    }
 }

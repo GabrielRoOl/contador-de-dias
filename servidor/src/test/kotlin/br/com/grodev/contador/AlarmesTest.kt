@@ -146,4 +146,81 @@ class AlarmesTest {
         rodada()
         assertEquals("2026-11-03", banco.obter("d1")!!.ultimoEnvio)
     }
+
+    // ---------------------------------------------------------------- cronograma
+
+    private fun passo(em: Long, titulo: String = "Passo concluído", corpo: String = "Prancha. Agora: Agachamento · 5 min") = PassoCronograma(em, titulo, corpo)
+
+    @Test fun `cronograma envia cada fim de passo no seu horário, com o texto do app`() {
+        criar("d1")
+        banco.definirCronograma("d1", listOf(passo(agora + 120_000), passo(agora + 420_000, "Cronograma concluído", "Treino")))
+        assertEquals(0, rodada().enviados)
+        agora += 120_000
+        assertEquals(1, rodada().enviados)
+        val e = enviador.enviados.single()
+        assertEquals("cronograma", e.carga.tag); assertEquals("cronograma", e.topico); assertEquals("./#cronograma", e.carga.url)
+        assertEquals("Passo concluído", e.carga.titulo); assertEquals("Prancha. Agora: Agachamento · 5 min", e.carga.corpo)
+        assertEquals(120, e.ttl)
+        assertEquals(1, banco.cronogramaDe("d1").size, "só o enviado some")
+        agora += 300_000
+        assertEquals(1, rodada().enviados)
+        assertEquals("Cronograma concluído", enviador.enviados.last().carga.titulo)
+        assertTrue(banco.cronogramaDe("d1").isEmpty())
+    }
+
+    @Test fun `cronograma vencido há mais que o TTL e alarme do pomodoro convivem sem se atrapalhar`() {
+        criar("d1")
+        banco.definirCronograma("d1", listOf(passo(agora), passo(agora + 600_000)))
+        banco.definirAlarme("d1", agora, "foco", "pausa")
+        agora += 121_000
+        val r = rodada()
+        assertEquals(0, r.enviados, "o passo velho (121 s) foi descartado e o alarme também")
+        assertTrue(r.descartados >= 2)
+        assertEquals(1, banco.cronogramaDe("d1").size, "o passo futuro continua")
+        agora += 480_000
+        assertEquals(1, rodada().enviados)
+    }
+
+    @Test fun `cronograma com falha tenta de novo e desiste no limite sem derrubar os outros passos`() {
+        criar("d1")
+        banco.definirCronograma("d1", listOf(passo(agora), passo(agora + 1_000_000)))
+        enviador.resposta = { ResultadoEnvio.Falha("rede") }
+        repeat(3) { assertEquals(1, rodada().falhas); agora += 15_000 }
+        assertEquals(3, enviador.enviados.size)
+        assertEquals(1, banco.cronogramaDe("d1").size, "o passo que falhou 3 vezes foi descartado; o futuro fica")
+    }
+
+    @Test fun `cronograma de inscrição expirada (410) some junto com a inscrição`() {
+        criar("d1")
+        banco.definirCronograma("d1", listOf(passo(agora), passo(agora + 100_000)))
+        enviador.resposta = { ResultadoEnvio.Expirada }
+        assertEquals(1, rodada().expirados)
+        assertNull(banco.obter("d1")!!.pushEndpoint)
+        assertTrue(banco.cronogramaDe("d1").isEmpty())
+    }
+
+    @Test fun `cronograma cancelado ou de quem perdeu a inscrição não envia`() {
+        criar("d1"); criar("d2", inscrito = false)
+        banco.definirCronograma("d1", listOf(passo(agora + 1_000)))
+        banco.cancelarCronograma("d1")
+        banco.definirCronograma("d2", listOf(passo(agora + 1_000)))
+        agora += 5_000
+        assertEquals(0, rodada().enviados)
+        agora += 121_000; rodada()
+        assertTrue(banco.cronogramaDe("d2").isEmpty(), "sem inscrição, é limpo depois do TTL")
+    }
+
+    @Test fun `definir o cronograma de novo substitui o anterior por inteiro`() {
+        criar("d1")
+        banco.definirCronograma("d1", listOf(passo(agora + 1_000), passo(agora + 2_000), passo(agora + 3_000)))
+        banco.definirCronograma("d1", listOf(passo(agora + 9_000, "novo")))
+        assertEquals(listOf("novo"), banco.cronogramaDe("d1").map { it.titulo })
+    }
+
+    @Test fun `apagar o dispositivo apaga o cronograma dele`() {
+        criar("d1"); criar("d2")
+        banco.definirCronograma("d1", listOf(passo(agora + 1_000))); banco.definirCronograma("d2", listOf(passo(agora + 1_000)))
+        banco.apagar("d1")
+        assertTrue(banco.cronogramaDe("d1").isEmpty()); assertEquals(1, banco.cronogramaDe("d2").size)
+    }
 }
