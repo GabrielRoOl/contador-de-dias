@@ -551,3 +551,86 @@ test('ativar com convite recusado (403) apaga o convite guardado; falha de rede 
   assert.deepEqual(await s.ativar(estado, s.convitePendente()), { ok: false, motivo: 'convite-invalido' });
   assert.equal(s.convitePendente(), null);
 });
+
+/* ---------- cronograma: avisos do servidor por fim de passo ---------- */
+const chamadasCrono = (a) => a.chamadas.filter((c) => typeof c[1] === 'string' && c[1].endsWith('/cronograma'));
+const lista2 = [{ em: 1762000120000, titulo: 'Passo concluído', corpo: 'Prancha. Agora: Flexão · 5 min' }, { em: 1762000420000, titulo: 'Cronograma concluído', corpo: 'Treino' }];
+
+test('cronograma: sem dispositivo ativo não vai à rede', async () => {
+  const a = ambiente();
+  await S.criar(a.env).cronograma(lista2);
+  assert.equal(chamadasCrono(a).length, 0);
+});
+
+test('cronograma: envia a lista uma vez, com o segredo, e não repete a cada chamada', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  for (let i = 0; i < 5; i++) await s.cronograma(lista2);
+  const [put, ...resto] = chamadasCrono(a);
+  assert.equal(resto.length, 0);
+  assert.equal(put[0], 'PUT'); assert.equal(put[2], 'Bearer s3gr3d0');
+  assert.deepEqual(put[3], { passos: lista2 });
+});
+
+test('cronograma: lista menor (passo cumprido) substitui; vazia cancela só se havia', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  await s.cronograma([]);
+  assert.equal(chamadasCrono(a).length, 0, 'nada para cancelar');
+  await s.cronograma(lista2);
+  await s.cronograma(lista2.slice(1));
+  await s.cronograma([]); await s.cronograma([]);
+  assert.deepEqual(chamadasCrono(a).map((c) => c[0]), ['PUT', 'PUT', 'DELETE']);
+  assert.equal(JSON.parse(a.guardado['contagem-de-dias:push']).cronograma, undefined);
+});
+
+test('cronograma: falha espera 30 s para o mesmo pedido, e pedido novo vai na hora', async () => {
+  let t = 1000;
+  const a = ambiente();
+  a.env.agora = () => t;
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  a.srv.respostas['PUT ./api/dispositivos/ID/cronograma'] = { status: 429 };
+  await s.cronograma(lista2); await s.cronograma(lista2); t += 29000; await s.cronograma(lista2);
+  assert.equal(chamadasCrono(a).length, 1, 'não insiste a cada segundo');
+  await s.cronograma(lista2.slice(1));
+  assert.equal(chamadasCrono(a).length, 2, 'lista diferente tenta já');
+  t += 31000;
+  a.srv.respostas['PUT ./api/dispositivos/ID/cronograma'] = { status: 204 };
+  await s.cronograma(lista2.slice(1));
+  assert.equal(chamadasCrono(a).length, 3);
+  assert.ok(JSON.parse(a.guardado['contagem-de-dias:push']).cronograma);
+});
+
+test('cronograma: o que mudou durante o pedido em andamento é enviado em seguida, só o último', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  const ps = [s.cronograma(lista2), s.cronograma(lista2.slice(1)), s.cronograma([])];
+  await Promise.all(ps);
+  assert.deepEqual(chamadasCrono(a).map((c) => c[0]), ['PUT', 'DELETE']);
+});
+
+test('cronograma: 401 apaga a credencial; sem rede o cancelamento fica pendente', async () => {
+  const a = ambiente();
+  const s = S.criar(a.env);
+  await s.ativar(estado);
+  a.srv.respostas['PUT ./api/dispositivos/ID/cronograma'] = { status: 401 };
+  await s.cronograma(lista2);
+  assert.equal(s.temDispositivo(), false);
+
+  let t = 1000;
+  const b = ambiente();
+  b.env.agora = () => t;
+  const s2 = S.criar(b.env);
+  await s2.ativar(estado);
+  await s2.cronograma(lista2);
+  b.srv.rede = false;
+  await s2.cronograma([]);
+  assert.ok(JSON.parse(b.guardado['contagem-de-dias:push']).cronograma, 'o servidor ainda tem o cronograma');
+  b.srv.rede = true; t += 31000;
+  await s2.cronograma([]);
+  assert.equal(JSON.parse(b.guardado['contagem-de-dias:push']).cronograma, undefined);
+});
