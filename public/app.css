@@ -276,10 +276,10 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(6px);
 .conv-cartao { gap: 10px; }
 .conv-cartao[hidden] { display: none; }
 .convite-titulo { margin: 0; font-weight: 600; font-size: 17px; }
-.acoes-topo { display: flex; gap: 10px; }
+.acoes-topo { display: flex; flex-wrap: wrap; gap: 10px; }
 .acoes-topo .btn { width: auto; white-space: nowrap; font-size: 15px; letter-spacing: 0.06em; }
-.acoes-topo #toggle-form { flex: 1 1 auto; }
-.acoes-topo #toggle-pomodoro { flex: 0 0 auto; padding: 0 14px; }
+.acoes-topo #toggle-form { flex: 1 1 100%; }
+.acoes-topo #toggle-pomodoro, .acoes-topo #toggle-cronograma { flex: 1 1 0; padding: 0 14px; }
 
 #a-notif-botao { align-self: flex-start; margin-top: 4px; }
 #a-notif-botao:disabled { opacity: 0.6; }
@@ -322,7 +322,21 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(6px);
 .pomo-barras .col.hoje { color: var(--ink); font-weight: 600; }
 .pomo-barras .col.vazio .barra { background: var(--line); }
 .pomo-stats-forte { margin: 10px 0 0; }
+.crono-passo-atual { margin: 0; text-align: center; font-weight: 600; font-size: 18px; min-height: 1.4em; }
+.crono-passos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; counter-reset: passo; }
+.crono-passos li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.crono-passos li.atual { color: var(--ink); border-color: var(--accent); font-weight: 600; }
+.crono-passos li.feito { text-decoration: line-through; opacity: 0.65; }
+.crono-card-passos { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.crono-meta { margin: 0; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.crono-editor-passos { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.crono-editor-passos li { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.crono-editor-passos .linha, .crono-editor-passos .acoes-passo { display: flex; align-items: center; gap: 8px; }
+.crono-editor-passos .linha input[type=number] { width: 72px; }
+.crono-editor-passos .un { font-size: 13px; color: var(--muted); }
+#tela-cronograma #crono-lista-area { display: flex; flex-direction: column; gap: 14px; }
 .pomo-dias { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
 .pomo-dias li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; font-variant-numeric: tabular-nums; }
 [data-visual="classico"] .pomo-ciclo li.feito { box-shadow: none; }
 #ps-forte { margin: 12px 0 14px; }
+.crono-titulo-card { margin: 0; font-size: 22px; line-height: 1.2; }

@@ -697,7 +697,7 @@
     } catch (e) { audioCtx = null; }
   }
   /* Depois de recarregar ou reabrir o app com o foco rodando, o som só volta a funcionar após o próximo toque em qualquer lugar. */
-  document.addEventListener('pointerdown', function () { if (pomo.rodando && !audioCtx) prepararAudio(); }, { passive: true });
+  document.addEventListener('pointerdown', function () { if ((pomo.rodando || (crono && crono.sessao && crono.sessao.rodando)) && !audioCtx) prepararAudio(); }, { passive: true });
   function bipe() {
     if (!audioCtx) return;
     try {
@@ -807,7 +807,7 @@
   }
 
   // ativar ou desativar as notificações muda se o servidor pode avisar: concilia o alarme e a dica da tela
-  sync.ouvir(function () { espelharCred(); pomoAgendar(); pomoRender(); });
+  sync.ouvir(function () { espelharCred(); pomoAgendar(); pomoRender(); if (typeof cronoAgendar === 'function') cronoAgendar(); });
   if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.tipo === 'pomodoro') pomoAdotar(); });
 
   var armadoTimer = null;
@@ -873,7 +873,7 @@
       var col = document.createElement('div');
       col.className = 'col' + (i === 6 ? ' hoje' : '') + (d.n === 0 ? ' vazio' : '');
       var n = document.createElement('span'); n.textContent = d.n;
-      var b = document.createElement('div'); b.className = 'barra'; b.style.height = Math.round(d.n / maior * 70) + 'px'; // CSSOM é permitido pela CSP (atributo style= não)
+      var b = document.createElement('div'); b.className = 'barra'; b.style.height = Math.round(d.n / maior * 70) + 'px'; // a CSP permite alterar pelo CSSOM, mas não o atributo de estilo escrito no HTML
       var l = document.createElement('span'); l.textContent = INICIAL_SEMANA[d.semana];
       col.appendChild(n); col.appendChild(b); col.appendChild(l);
       barras.appendChild(col);
@@ -898,18 +898,278 @@
     dialogoHistorico.showModal();
   });
 
-  /* Uma tela de cada vez, pelo endereço (#pomodoro): o botão Voltar do celular volta para as contagens. */
+  /* ---------- Cronograma ---------- */
+  var CR = window.Cronograma;
+  var crono = CR.novo();
+  var cronoUi = { msg: '', armado: false };
+  var cronoFim = null;     // setTimeout que acorda no fim do passo, mesmo fora da tela do cronograma
+  var cronoTelaLigada = null; // WakeLock: a tela não apaga no meio do exercício
+  var cronoPedindoTela = false;
+  var telaCrono = document.getElementById('tela-cronograma');
+  var elCr = {
+    exec: document.getElementById('crono-exec'), nome: document.getElementById('crono-nome'), tempo: document.getElementById('crono-tempo'),
+    arco: document.getElementById('crono-arco'), passo: document.getElementById('crono-passo'), msg: document.getElementById('crono-msg'),
+    passos: document.getElementById('crono-passos'), principal: document.getElementById('crono-principal'), pular: document.getElementById('crono-pular'),
+    parar: document.getElementById('crono-parar'), fechar: document.getElementById('crono-fechar'), listaArea: document.getElementById('crono-lista-area'),
+    lista: document.getElementById('crono-lista')
+  };
+
+  function cronoSalvar() { CR.salvar(localStorage, crono); }
+  function novoIdCrono() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  function cronoRenderLista() {
+    if (!crono.rotinas.length) {
+      elCr.lista.innerHTML = '<p class="hint">Nenhum cronograma ainda. Crie um com os passos que você repete, como prancha 2 min, agachamento 5 min e flexão 5 min. Ele fica salvo para você só iniciar da próxima vez.</p>';
+      return;
+    }
+    elCr.lista.innerHTML = crono.rotinas.map(function (r) {
+      var feitas = r.feitas === 0 ? 'Ainda não feito' : 'Feito ' + r.feitas + ' ' + plural(r.feitas, 'vez', 'vezes');
+      return '<article class="card" data-id="' + esc(r.id) + '">' +
+        '<h2 class="crono-titulo-card">' + esc(r.nome) + '</h2>' +
+        '<p class="crono-meta">' + r.passos.length + ' ' + plural(r.passos.length, 'passo', 'passos') + ' · ' + esc(CR.formatarDuracao(CR.totalSeg(r))) + ' · ' + esc(feitas) + '</p>' +
+        '<p class="crono-card-passos">' + r.passos.map(function (p) { return esc(p.nome) + ' ' + esc(CR.formatarDuracao(p.seg)); }).join(' · ') + '</p>' +
+        '<div class="actions"><button class="btn primary" type="button" data-act="crono-iniciar">Iniciar</button>' +
+        '<button class="btn" type="button" data-act="crono-editar">Editar</button></div></article>';
+    }).join('');
+  }
+
+  /* Só o relógio e o anel do passo: roda a cada segundo sem mexer no resto da tela. */
+  function cronoRelogio() {
+    var st = CR.status(crono), r = CR.rotinaDaSessao(crono);
+    if (!st) return;
+    var rest = CR.restante(crono, Date.now());
+    var dur = st === 'concluido' ? 1 : r.passos[crono.sessao.passo].seg * 1000;
+    var txt = CR.formatarTempo(rest);
+    if (elCr.tempo.textContent !== txt) elCr.tempo.textContent = txt;
+    elCr.arco.setAttribute('stroke-dasharray', (st === 'concluido' ? 100 : Math.round((1 - rest / dur) * 1000) / 10) + ' 100');
+  }
+
+  function cronoRender() {
+    if (telaCrono.hidden) return;
+    var st = CR.status(crono), r = CR.rotinaDaSessao(crono);
+    elCr.listaArea.hidden = !!st;
+    elCr.exec.hidden = !st;
+    if (!st) { cronoRenderLista(); return; }
+    var passo = crono.sessao.passo, n = r.passos.length;
+    elCr.nome.textContent = r.nome;
+    elCr.passo.textContent = st === 'concluido' ? 'Tudo feito' : 'Passo ' + (passo + 1) + ' de ' + n + ' · ' + r.passos[passo].nome;
+    elCr.passos.textContent = '';
+    r.passos.forEach(function (p, i) {
+      var li = document.createElement('li');
+      li.className = i < passo ? 'feito' : (i === passo && st !== 'concluido' ? 'atual' : '');
+      var a = document.createElement('span'); a.textContent = p.nome;
+      var b = document.createElement('span'); b.textContent = CR.formatarDuracao(p.seg);
+      li.appendChild(a); li.appendChild(b);
+      elCr.passos.appendChild(li);
+    });
+    var andando = st === 'rodando' || st === 'pausado';
+    elCr.principal.textContent = st === 'rodando' ? 'Pausar' : st === 'pausado' ? 'Continuar' : st === 'concluido' ? 'Refazer' : 'Iniciar';
+    elCr.pular.disabled = !andando;
+    elCr.parar.disabled = !andando;
+    elCr.fechar.disabled = andando;
+    elCr.parar.textContent = cronoUi.armado ? 'Confirmar parar' : 'Parar';
+    elCr.msg.textContent = cronoUi.armado ? 'Parar volta ao começo e não conta como feito.'
+      : cronoUi.msg || (st === 'pausado' ? 'Pausado. Continue quando quiser.'
+        : st === 'concluido' ? 'Cronograma concluído. Feito ' + r.feitas + ' ' + plural(r.feitas, 'vez', 'vezes') + '.'
+        : st === 'pronto' ? 'Total: ' + CR.formatarDuracao(CR.totalSeg(r)) + '. Toque em Iniciar.' : '');
+    cronoRelogio();
+  }
+
+  /* A tela fica acesa enquanto o cronograma roda (melhor esforço: nem todo navegador tem). */
+  function cronoTela() {
+    var quer = !!(crono.sessao && crono.sessao.rodando) && !document.hidden;
+    if (quer && !cronoTelaLigada && !cronoPedindoTela && navigator.wakeLock) {
+      cronoPedindoTela = true;
+      navigator.wakeLock.request('screen').then(function (l) {
+        cronoPedindoTela = false; cronoTelaLigada = l;
+        l.addEventListener('release', function () { cronoTelaLigada = null; });
+      }, function () { cronoPedindoTela = false; });
+    } else if (!quer && cronoTelaLigada) {
+      var l = cronoTelaLigada; cronoTelaLigada = null;
+      try { l.release(); } catch (e) { /* já liberada */ }
+    }
+  }
+
+  function cronoAgendar() {
+    if (cronoFim) { clearTimeout(cronoFim); cronoFim = null; }
+    if (crono.sessao && crono.sessao.rodando) cronoFim = setTimeout(cronoVerificar, Math.max(0, crono.sessao.fimEm - Date.now()) + 30);
+    // com o app fechado quem avisa cada fim de passo é o servidor; pausar, parar ou concluir cancela tudo
+    if (sync.cronograma) sync.cronograma(CR.alarmesDe(crono));
+    cronoTela();
+  }
+
+  /* Fecha os passos que já acabaram, segue para o próximo e avisa se aconteceu agora. */
+  function cronoVerificar() {
+    var agora = Date.now();
+    var r = CR.avancar(crono, agora);
+    if (!r.concluiu) { cronoAgendar(); return; }
+    crono = r.estado;
+    cronoSalvar();
+    var c = r.concluiu, rotina = CR.rotinaDaSessao(crono);
+    cronoUi.msg = c.terminou ? '' : 'Passo concluído. Agora: ' + rotina.passos[crono.sessao.passo].nome + '.'; // ao concluir vale o texto padrão, com as vezes feitas
+    if (agora - c.em < 8000) alertarFim(c.terminou ? 'Cronograma concluído' : 'Passo concluído');
+    cronoAgendar();
+    cronoRender();
+  }
+
+  elCr.lista.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    var cartao = e.target.closest('article[data-id]');
+    if (!b || !cartao) return;
+    if (b.getAttribute('data-act') === 'crono-iniciar') {
+      prepararAudio();
+      crono = CR.abrir(crono, cartao.getAttribute('data-id'));
+      cronoUi.msg = ''; cronoSalvar(); cronoAgendar(); cronoRender();
+    } else if (b.getAttribute('data-act') === 'crono-editar') {
+      abrirEditorCrono(CR.achar(crono, cartao.getAttribute('data-id')));
+    }
+  });
+  elCr.principal.addEventListener('click', function () {
+    prepararAudio();
+    cronoUi.msg = ''; desarmarCrono();
+    var agora = Date.now(), st = CR.status(crono);
+    crono = st === 'rodando' ? CR.pausar(crono, agora) : CR.iniciar(crono, agora);
+    cronoSalvar(); cronoAgendar(); cronoRender();
+  });
+  elCr.pular.addEventListener('click', function () {
+    cronoUi.msg = ''; desarmarCrono();
+    crono = CR.pular(crono, Date.now());
+    cronoSalvar(); cronoAgendar(); cronoRender();
+  });
+  var cronoArmadoTimer = null;
+  function desarmarCrono() { cronoUi.armado = false; if (cronoArmadoTimer) { clearTimeout(cronoArmadoTimer); cronoArmadoTimer = null; } }
+  elCr.parar.addEventListener('click', function () {
+    if (!cronoUi.armado) { // em andamento ou pausado: pede um segundo toque
+      cronoUi.armado = true;
+      cronoArmadoTimer = setTimeout(function () { cronoArmadoTimer = null; cronoUi.armado = false; cronoRender(); }, 4000);
+      cronoRender();
+      return;
+    }
+    desarmarCrono(); cronoUi.msg = '';
+    crono = CR.parar(crono);
+    cronoSalvar(); cronoAgendar(); cronoRender();
+  });
+  elCr.fechar.addEventListener('click', function () {
+    crono = CR.fechar(crono);
+    cronoUi.msg = ''; cronoSalvar(); cronoAgendar(); cronoRender();
+  });
+
+  /* ----- editor ----- */
+  var dlgCr = document.getElementById('crono-editor');
+  var elPassosEd = document.getElementById('crono-f-passos');
+  var cronoEditando = null; // id da rotina em edição, ou null para uma nova
+  var cronoExcluirArmado = null;
+
+  function totalEditor() {
+    var n = elPassosEd.children.length, seg = 0;
+    Array.prototype.forEach.call(elPassosEd.children, function (li) { seg += lerSegundos(li); });
+    document.getElementById('crono-f-total').textContent = n + ' ' + plural(n, 'passo', 'passos') + ' · total ' + CR.formatarDuracao(seg);
+  }
+  function lerSegundos(li) {
+    var m = Number(li.querySelector('.f-min').value) || 0, s = Number(li.querySelector('.f-seg').value) || 0;
+    return Math.round(m * 60 + s);
+  }
+  function campoNumero(classe, rotulo, max, valor) {
+    var i = document.createElement('input');
+    i.type = 'number'; i.className = classe; i.min = '0'; i.max = String(max); i.step = '1'; i.inputMode = 'numeric';
+    i.setAttribute('aria-label', rotulo); i.value = valor;
+    i.addEventListener('input', totalEditor);
+    return i;
+  }
+  function botaoPasso(rotulo, acao) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn small'; b.textContent = rotulo;
+    b.addEventListener('click', acao);
+    return b;
+  }
+  function linhaPasso(p) {
+    var li = document.createElement('li');
+    var nome = document.createElement('input');
+    nome.type = 'text'; nome.className = 'f-nome'; nome.maxLength = 40; nome.placeholder = 'Ex.: prancha'; nome.autocomplete = 'off';
+    nome.setAttribute('aria-label', 'Nome do passo'); nome.value = p ? p.nome : '';
+    var linha = document.createElement('div'); linha.className = 'linha';
+    var un1 = document.createElement('span'); un1.className = 'un'; un1.textContent = 'min';
+    var un2 = document.createElement('span'); un2.className = 'un'; un2.textContent = 's';
+    linha.appendChild(campoNumero('f-min', 'Minutos', 120, p ? Math.floor(p.seg / 60) : ''));
+    linha.appendChild(un1);
+    linha.appendChild(campoNumero('f-seg', 'Segundos', 59, p ? p.seg % 60 : ''));
+    linha.appendChild(un2);
+    var acoes = document.createElement('div'); acoes.className = 'acoes-passo';
+    acoes.appendChild(botaoPasso('Subir', function () { if (li.previousElementSibling) elPassosEd.insertBefore(li, li.previousElementSibling); }));
+    acoes.appendChild(botaoPasso('Descer', function () { if (li.nextElementSibling) elPassosEd.insertBefore(li.nextElementSibling, li); }));
+    acoes.appendChild(botaoPasso('Remover', function () {
+      if (elPassosEd.children.length > 1) li.remove(); else { nome.value = ''; li.querySelector('.f-min').value = ''; li.querySelector('.f-seg').value = ''; }
+      totalEditor();
+    }));
+    li.appendChild(nome); li.appendChild(linha); li.appendChild(acoes);
+    return li;
+  }
+  function abrirEditorCrono(r) {
+    cronoEditando = r ? r.id : null;
+    cronoExcluirArmado = null;
+    document.getElementById('crono-editor-titulo').textContent = r ? 'Editar cronograma' : 'Novo cronograma';
+    document.getElementById('crono-f-nome').value = r ? r.nome : '';
+    document.getElementById('crono-f-erro').textContent = '';
+    var ex = document.getElementById('crono-f-excluir');
+    ex.hidden = !r; ex.textContent = 'Excluir';
+    elPassosEd.textContent = '';
+    (r ? r.passos : [null]).forEach(function (p) { elPassosEd.appendChild(linhaPasso(p)); });
+    totalEditor();
+    dlgCr.showModal();
+  }
+  document.getElementById('crono-novo').addEventListener('click', function () { abrirEditorCrono(null); });
+  document.getElementById('crono-f-add').addEventListener('click', function () {
+    if (elPassosEd.children.length >= CR.LIMITES.passos) { document.getElementById('crono-f-erro').textContent = 'No máximo ' + CR.LIMITES.passos + ' passos por cronograma.'; return; }
+    var li = linhaPasso(null);
+    elPassosEd.appendChild(li); totalEditor();
+    li.querySelector('.f-nome').focus();
+  });
+  document.getElementById('crono-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var erro = document.getElementById('crono-f-erro');
+    var dados = { nome: document.getElementById('crono-f-nome').value,
+      passos: Array.prototype.map.call(elPassosEd.children, function (li) { return { nome: li.querySelector('.f-nome').value, seg: lerSegundos(li) }; }) };
+    try {
+      crono = cronoEditando ? CR.atualizarRotina(crono, cronoEditando, dados) : CR.criarRotina(crono, dados, novoIdCrono());
+    } catch (ex) { erro.textContent = ex.message; return; }
+    cronoSalvar(); cronoAgendar();
+    dlgCr.close();
+    cronoRender();
+  });
+  document.getElementById('crono-f-excluir').addEventListener('click', function () {
+    var b = document.getElementById('crono-f-excluir');
+    if (!cronoExcluirArmado) { // segundo toque confirma
+      b.textContent = 'Confirmar exclusão';
+      cronoExcluirArmado = setTimeout(function () { cronoExcluirArmado = null; b.textContent = 'Excluir'; }, 4000);
+      return;
+    }
+    clearTimeout(cronoExcluirArmado); cronoExcluirArmado = null;
+    crono = CR.excluirRotina(crono, cronoEditando);
+    cronoSalvar(); cronoAgendar();
+    dlgCr.close();
+    cronoRender();
+  });
+  dlgCr.addEventListener('input', function () { document.getElementById('crono-f-erro').textContent = ''; });
+  dlgCr.addEventListener('click', function (e) {
+    if (e.target === dlgCr || e.target.closest('[data-fechar-dialogo]')) dlgCr.close();
+  });
+
+  /* Uma tela de cada vez, pelo endereço (#pomodoro ou #cronograma): o botão Voltar do celular volta para as contagens. */
   function aplicarTela() {
-    var noPomo = location.hash === '#pomodoro';
-    telaContagens.hidden = noPomo;
+    var noPomo = location.hash === '#pomodoro', noCrono = location.hash === '#cronograma';
+    telaContagens.hidden = noPomo || noCrono;
     telaPomo.hidden = !noPomo;
+    telaCrono.hidden = !noCrono;
     if (noPomo) { pomoVerificar(); pomoRender(); }
+    if (noCrono) { cronoVerificar(); cronoRender(); }
     window.scrollTo(0, 0);
   }
   window.addEventListener('hashchange', aplicarTela);
   document.getElementById('toggle-pomodoro').addEventListener('click', function () { location.hash = '#pomodoro'; });
   document.getElementById('pomo-voltar').addEventListener('click', function () { location.hash = ''; });
-  setInterval(function () { if (!telaPomo.hidden) { pomoVerificar(); pomoRelogio(); } }, 1000);
+  document.getElementById('toggle-cronograma').addEventListener('click', function () { location.hash = '#cronograma'; });
+  document.getElementById('crono-voltar').addEventListener('click', function () { location.hash = ''; });
+  setInterval(function () { if (!telaPomo.hidden) { pomoVerificar(); pomoRelogio(); } if (!telaCrono.hidden) { cronoVerificar(); cronoRelogio(); } }, 1000);
 
   /* ---------- início ---------- */
   carregar();
@@ -921,8 +1181,10 @@
   }
   renderConvite();
   pomo = PM.carregar(localStorage);
+  crono = CR.carregar(localStorage);
   aplicarTela();
   pomoVerificar();
+  cronoVerificar();
   espelharCred();
   pomoAdotar();
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', sincronizarCorBarra);
@@ -930,9 +1192,9 @@
   setInterval(tick, 15000);
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) sync.descarregar();
-    else { tick(); sync.retomar(estado); document.title = tituloOriginal; pomoAdotar().then(pomoVerificar); }
+    else { tick(); sync.retomar(estado); document.title = tituloOriginal; pomoAdotar().then(pomoVerificar); cronoVerificar(); }
   });
-  window.addEventListener('online', function () { sync.retomar(estado); pomoAgendar(); });
+  window.addEventListener('online', function () { sync.retomar(estado); pomoAgendar(); cronoAgendar(); });
   sync.retomar(estado);
   sync.verificar();
 
