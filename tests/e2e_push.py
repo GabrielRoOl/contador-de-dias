@@ -359,6 +359,38 @@ try:
         pg.evaluate("location.hash = ''")
         botao_notificacao('parar')
         check(espera(lambda: alarme() is None and not do_pomo()), 'Parar encerra tudo: sem alarme e sem notificação no fim')
+        # --- cronograma: o app manda os fins de passo ao servidor e cancela ao pausar, pular e parar
+        def cron_db():
+            return linhas('SELECT em, titulo, corpo FROM cronograma_alarmes ORDER BY ordem')
+
+        rotina = {'versao': 1, 'rotinas': [{'id': 'r1', 'nome': 'Treino', 'passos': [{'nome': 'Prancha', 'seg': 120}, {'nome': 'Agachamento', 'seg': 300}, {'nome': 'Flexão', 'seg': 300}], 'feitas': 0, 'ultima': None}], 'sessao': None}
+        pg.evaluate("(r) => localStorage.setItem('contagem-de-dias:cronograma', JSON.stringify(r))", rotina)
+        pg.goto(BASE + '#cronograma'); pg.reload(); pg.wait_for_selector('#crono-lista .card')  # goto só troca o # (sem recarregar): o reload faz o app ler a rotina
+        pg.evaluate('navigator.serviceWorker.ready')
+        check(not cron_db(), 'cronograma parado: nada no servidor')
+        pg.click('#crono-lista button[data-act=crono-iniciar]'); pg.click('#crono-principal')
+        check(espera(lambda: len(cron_db()) == 3), 'iniciar o cronograma manda um aviso por fim de passo ao servidor')
+        c = cron_db()
+        agora_ms = time.time() * 1000
+        check(abs(c[0][0] - agora_ms - 120000) < 15000 and c[1][0] - c[0][0] == 300000 and c[2][0] - c[1][0] == 300000, 'os horários se encadeiam: 2 min, mais 5 min, mais 5 min')
+        check(c[0][1:] == ('Passo concluído', 'Prancha. Agora: Agachamento · 5 min') and c[2][1:] == ('Cronograma concluído', 'Treino'), f'os textos dos avisos vêm do app ({c[0][1:]}, {c[2][1:]})')
+        check(json.loads(pg.evaluate("localStorage.getItem('contagem-de-dias:push')")).get('cronograma'), 'o app lembra o que o servidor tem')
+        pg.click('#crono-principal')  # Pausar
+        check(espera(lambda: not cron_db()), 'pausar o cronograma apaga os avisos do servidor')
+        pg.click('#crono-principal')  # Continuar
+        check(espera(lambda: len(cron_db()) == 3), 'continuar manda os avisos de novo')
+        pg.click('#crono-pular')
+        check(espera(lambda: len(cron_db()) == 2 and cron_db()[0][1] == 'Passo concluído'), 'pular um passo tira o aviso dele do servidor')
+        pg.click('#crono-parar'); pg.click('#crono-parar')
+        check(espera(lambda: not cron_db()), 'parar (com confirmação) apaga todos os avisos')
+        pg.click('#crono-fechar')
+        # o push do cronograma: tag própria, vibra, sem botão de iniciar, e convive com os outros
+        cdp0.send('ServiceWorker.enable')
+        entregar0(json.dumps({'titulo': 'Passo concluído', 'corpo': 'Prancha. Agora: Agachamento · 5 min', 'tag': 'cronograma', 'url': './#cronograma'}))
+        check(espera(lambda: do_pomo('cronograma')) and do_pomo('cronograma')[0]['vibrar'] == 5 and do_pomo('cronograma')[0]['acoes'] == [] and do_pomo('cronograma')[0]['url'] == BASE + '#cronograma', 'push do cronograma vira notificação que vibra e leva a #cronograma')
+        sw0.evaluate("async () => { for (const n of await self.registration.getNotifications()) n.close(); }")
+        pg.evaluate("location.hash = ''")
+
         # --- service worker: push de verdade (CDP) e clique
         BOMBA[0] = ctx.cookies
         cdp = ctx.new_cdp_session(pg)
