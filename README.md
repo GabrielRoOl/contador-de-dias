@@ -13,6 +13,11 @@ PWA para contar há quantos dias você parou de fazer algo (ou mantém um hábit
     <td><img src="docs/img/pomodoro-pausa.png" width="230" alt="Pomodoro em pausa, pausado, no tema claro"></td>
     <td><img src="docs/img/pomodoro-estatisticas.png" width="230" alt="Estatísticas do Pomodoro: últimos 7 dias, sequência, melhor dia, tempo de foco e barras por dia"></td>
   </tr>
+  <tr>
+    <td><img src="docs/img/cronograma-lista.png" width="230" alt="Lista de cronogramas salvos, com passos, tempo total e quantas vezes foi feito"></td>
+    <td><img src="docs/img/cronograma-execucao.png" width="230" alt="Cronograma em execução: passo 2 de 3, agachamento, com a lista de passos"></td>
+    <td></td>
+  </tr>
 </table>
 
 As imagens são geradas com dados inventados por `python3 scripts/capturas.py`.
@@ -31,6 +36,12 @@ As imagens são geradas com dados inventados por `python3 scripts/capturas.py`.
 - Opcionalmente vinculado a uma contagem do tipo manter: cada foco concluído faz o check-in do dia.
 - Histórico e estatísticas atrás de um botão, sem lista aberta e sem cobrança: últimos 7 dias contra os 7 anteriores, sequência de dias com foco (atual e melhor), melhor dia, tempo total de foco, barras por dia e o dia da semana em que você rende mais.
 - **Com o app fechado** há uma notificação fixa com o horário do fim e botões Pausar e Parar. Quando a fase acaba, o servidor manda o aviso, com vibração, e o botão *Iniciar pausa* (ou *Iniciar foco*) já começa a fase seguinte sem abrir o app.
+
+**Cronograma** (tela própria, `#cronograma`, botão ao lado do Pomodoro)
+- Rotinas de passos com tempo, por exemplo prancha 2 min, agachamento 5 min e flexão 5 min. Ficam salvas: da próxima vez é só tocar em *Iniciar*.
+- Um editor cria e altera cada cronograma (nome, passos com minutos e segundos, reordenar e remover). Ao abrir um cronograma salvo, tudo aparece zerado, só falta tocar em Iniciar.
+- Os passos seguem sozinhos, um depois do outro, com bipe e vibração a cada troca, e a tela fica acesa durante a sessão. Pausar, Pular, Parar (com confirmação) e *Refazer* no fim. Cada cronograma conta quantas vezes foi concluído.
+- Com o app fechado, o servidor avisa o fim de cada passo ("Passo concluído. Prancha. Agora: Agachamento · 5 min"): o app manda de uma vez todos os horários de fim e o servidor envia cada push no seu momento.
 
 **Notificações**
 - Um resumo por dia, no horário escolhido, com o texto de marco quando há um. Calculado no servidor.
@@ -69,6 +80,7 @@ flowchart LR
 - **Web Push implementado na JVM pura**, sem biblioteca de terceiros: criptografia RFC 8291 e autenticação VAPID (RFC 8292). A biblioteca `web-push` entra só nos testes, para conferir que o resultado é idêntico.
 - **Lógica duplicada de propósito, com paridade testada.** O servidor precisa montar o mesmo texto que o app. `logica.js` e `textos.js` são a referência, e `scripts/fixtures.js` gera milhares de casos (vários fusos, horário de verão, 29/02) que os testes Kotlin conferem.
 - **Pomodoro com relógio por horário de fim.** O estado guarda o instante em que a fase acaba, não um contador. Recarregar a página, suspender a aba ou ficar horas fechado não bagunça o tempo. O servidor guarda um alarme por aparelho, apenas com o horário e a fase.
+- **Cronograma como linha do tempo no servidor.** As rotinas ficam só no aparelho; o servidor guarda apenas os horários de fim de cada passo (até 20) e o texto do aviso, numa tabela que some junto com o aparelho. O app substitui a lista inteira a cada mudança (iniciar, pausar, pular, parar) e o agendador de alarmes, que já olha a cada 15 s, envia cada push no horário, com vida curta de 2 min.
 - **Botões da notificação.** O service worker não enxerga o `localStorage`, então o estado do Pomodoro e a credencial do aparelho são espelhados no IndexedDB (`armazem.js`). Pausar, Parar ou Iniciar pausa pela notificação alteram esse estado, a notificação e o alarme; o app aberto adota o resultado, e quem escreveu por último vale.
 - **Convites.** O cadastro exige a chave de administrador ou um convite individual de uso único (20 símbolos, 7 dias, só o hash fica no servidor). O convite viaja no link depois do `#`, que o navegador não envia ao servidor, e o app o apaga do endereço assim que lê.
 
@@ -94,6 +106,7 @@ public/                 o app (servido como site estático)
   app.css, app.js       estilo e interface
   textos.js             todas as frases do app, com variações
   logica.js             lógica pura (dias, marcos, economia, check-in, migração v1→v2)
+  cronograma.js         lógica pura do Cronograma (rotinas de passos com tempo, execução encadeada, avisos de fim de passo)
   pomodoro.js           lógica pura do Pomodoro (ciclo, pausar, pular, parar, histórico, notificação fixa e botões)
   armazem.js            IndexedDB compartilhado com o service worker
   sincronia.js          notificações: inscrição no push, espelho do estado, alarme e convites
