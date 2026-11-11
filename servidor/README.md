@@ -26,7 +26,7 @@ Configuração: copie `exemplo.env` para `.env`. Sem as chaves VAPID o servidor 
 | `DELETE /dispositivos/{id}` | apaga tudo do dispositivo |
 | `PUT /dispositivos/{id}/alarme` | alarme do Pomodoro: `{em, fase, proxima}` (`em` = fim da fase em ms, entre 1 min atrás e 2 h à frente; fases `foco`, `pausa`, `longa`). Substitui o anterior. 409 sem inscrição de push; 120 alterações por hora por aparelho |
 | `DELETE /dispositivos/{id}/alarme` | cancela o alarme (idempotente) |
-| `PUT /dispositivos/{id}/cronograma` | cronograma: `{passos:[{em, titulo, corpo}]}`, até 20 fins de passo em ordem (`em` em ms, de 1 min atrás a 24 h à frente; título de 1 a 60 e texto de até 160 caracteres, sem controle). Substitui tudo. 409 sem inscrição de push; divide o limite de 120 alterações por hora com o alarme |
+| `PUT /dispositivos/{id}/cronograma` | cronograma: `{passos:[{em, titulo, corpo}]}`, até 40 fins de passo e de descanso em ordem (`em` em ms, de 1 min atrás a 24 h à frente; título de 1 a 60 e texto de até 160 caracteres, sem controle). Substitui tudo. 409 sem inscrição de push; divide o limite de 120 alterações por hora com o alarme |
 | `DELETE /dispositivos/{id}/cronograma` | cancela todos os avisos do cronograma (idempotente) |
 | `GET /dispositivos/{id}/convites` | só administrador (403 para os outros): lista os convites, sem os códigos |
 | `POST /dispositivos/{id}/convites` | só administrador: `{nome}` → `{id, codigo, expiraEm}`; o código só aparece nesta resposta; no máximo 10 pendentes, 20 por hora |

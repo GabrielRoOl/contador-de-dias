@@ -723,11 +723,11 @@ class RotasTest {
             corpoCronograma(Triple(agora + 60_000, "a", "y".repeat(161))),
             corpoCronograma(Triple(agora + 60_000, "a\\u0007b", "")),
             """{"passos":[]}""", """{"passos":"x"}""", "[]", "nada",
-            corpoCronograma(*Array(21) { Triple(agora + 60_000L + it, "p", "") }),
+            corpoCronograma(*Array(41) { Triple(agora + 60_000L + it, "p", "") }),
         )
         ruins.forEach { assertEquals(HttpStatusCode.BadRequest, c.putJson(url, it, segredo).status, it.take(80)) }
         assertTrue(banco.cronogramaDe(id).isEmpty())
-        assertEquals(HttpStatusCode.NoContent, c.putJson(url, corpoCronograma(*Array(20) { Triple(agora + 60_000L + it, "p", "") }), segredo).status, "20 passos pode")
+        assertEquals(HttpStatusCode.NoContent, c.putJson(url, corpoCronograma(*Array(40) { Triple(agora + 60_000L + it, "p", "") }), segredo).status, "40 avisos pode")
         assertEquals(HttpStatusCode.UnsupportedMediaType, c.putJson(url, corpoCronograma(ok), segredo, ContentType.Text.Plain).status)
         assertEquals(HttpStatusCode.PayloadTooLarge, c.putJson(url, corpoCronograma(ok) + " ".repeat(17_000), segredo).status)
     }
