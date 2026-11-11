@@ -73,7 +73,7 @@ object Validacao {
     }
 
     // ---------------------------------------------------------------- cronograma (fins de passo)
-    const val CRONOGRAMA_MAX_PASSOS = 20
+    const val CRONOGRAMA_MAX_PASSOS = 40 // 20 passos com um descanso entre cada: 39 fins de fase
     const val CRONOGRAMA_MAX_TITULO = 60
     const val CRONOGRAMA_MAX_CORPO = 160
     const val CRONOGRAMA_ATRASO_MAX_MS = 60_000L
