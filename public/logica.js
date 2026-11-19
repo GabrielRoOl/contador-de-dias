@@ -8,6 +8,7 @@
   var CHAVE_V1 = 'contagem-de-dias:v1';
   var CHAVE_V2 = 'contagem-de-dias:v2';
   var TIPOS = ['parar', 'manter'];
+  var FREQ_MAX = 7;
   var VISUAIS = ['futurista', 'classico'];
   var MODOS = ['auto', 'claro', 'escuro'];
 
@@ -116,23 +117,37 @@
     return set;
   }
 
-  /* Dias consecutivos terminando hoje. Se hoje ainda não foi marcado, a sequência de ontem segue viva até o fim do dia. */
-  function sequenciaCheckins(checkins, hoje) {
-    var set = conjunto(checkins);
-    var h = ordinal(hoje);
-    var feitoHoje = !!set[h];
-    var fim = feitoHoje ? h : (set[h - 1] ? h - 1 : null);
-    if (fim === null) return { dias: 0, feitoHoje: false };
-    var n = 0;
-    while (set[fim - n]) n++;
-    return { dias: n, feitoHoje: feitoHoje };
+  /* A cada quantos dias o hábito é feito: 1 (todo dia) a 7 (uma vez por semana). Qualquer outra coisa vale 1. */
+  function frequenciaValida(f) { return typeof f === 'number' && f === Math.floor(f) && f >= 1 && f <= FREQ_MAX; }
+  function normFreq(f) { return frequenciaValida(f) ? f : 1; }
+
+  /* A sequência continua enquanto dois "Fiz" seguidos estiverem a no máximo `freq` dias um do outro (com freq 1, é o
+     dia seguinte). Está viva até `freq` dias depois do último "Fiz"; passou disso, quebrou. Conta as vezes feitas, e
+     `primeiro`/`ultimo` são os números de dia (ver `ordinal`) das pontas da sequência atual. */
+  function cadeiaAtual(checkins, hoje, freq) {
+    var f = normFreq(freq), h = ordinal(hoje);
+    var dias = Object.keys(conjunto(checkins)).map(Number).filter(function (d) { return d <= h; }).sort(function (a, b) { return a - b; });
+    if (!dias.length) return null;
+    var ultimo = dias[dias.length - 1];
+    if (h - ultimo > f) return null;
+    var i = dias.length - 1;
+    while (i > 0 && dias[i] - dias[i - 1] <= f) i--;
+    return { n: dias.length - i, primeiro: dias[i], ultimo: ultimo, feitoHoje: ultimo === h };
   }
 
-  function maiorSequencia(checkins) {
+  /* Vezes seguidas até hoje. Com freq 1 (padrão): dias consecutivos terminando hoje; se hoje ainda não foi marcado, a
+     sequência de ontem segue viva até o fim do dia. */
+  function sequenciaCheckins(checkins, hoje, freq) {
+    var c = cadeiaAtual(checkins, hoje, freq);
+    return c ? { dias: c.n, feitoHoje: c.feitoHoje } : { dias: 0, feitoHoje: false };
+  }
+
+  function maiorSequencia(checkins, freq) {
+    var f = normFreq(freq);
     var dias = Object.keys(conjunto(checkins)).map(Number).sort(function (a, b) { return a - b; });
     var maior = 0, atual = 0;
     dias.forEach(function (d, i) {
-      atual = i > 0 && d === dias[i - 1] + 1 ? atual + 1 : 1;
+      atual = i > 0 && d - dias[i - 1] <= f ? atual + 1 : 1;
       if (atual > maior) maior = atual;
     });
     return maior;
@@ -154,16 +169,18 @@
     return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime();
   }
 
-  /* Sequência atual do tipo manter como um intervalo de dias inteiros, para alimentar marcos e barras.
-     `inicio` é a meia-noite do primeiro dia; `referencia` é a meia-noite depois do último, então
-     calcular(inicio, referencia).dias é igual a `dias`. `quebrou` indica sequência perdida (há check-ins antigos). */
-  function cicloManter(checkins, hoje) {
-    var seq = sequenciaCheckins(checkins, hoje);
-    if (seq.dias === 0) return { dias: 0, feitoHoje: false, inicio: null, referencia: null, quebrou: (checkins || []).length > 0 };
-    var ultimo = ordinal(hoje) - (seq.feitoHoje ? 0 : 1);
+  /* Sequência atual do tipo manter, para alimentar marcos e barras. `dias` são as vezes feitas seguidas e `span` os dias
+     do calendário entre o primeiro e o último "Fiz" (com freq 1 são iguais). `inicio` é a meia-noite do primeiro dia e
+     `referencia` a meia-noite depois do último, então calcular(inicio, referencia).dias é igual a `span`. `quebrou` indica
+     sequência perdida (há check-ins antigos). `descanso`: hoje não é dia de fazer (feito há menos de `freq` dias);
+     `proximoEm` é o número do dia em que o próximo "Fiz" é devido (null sem sequência). */
+  function cicloManter(checkins, hoje, freq) {
+    var f = normFreq(freq), c = cadeiaAtual(checkins, hoje, f);
+    if (!c) return { dias: 0, span: 0, feitoHoje: false, inicio: null, referencia: null, quebrou: (checkins || []).length > 0, descanso: false, proximoEm: null };
     return {
-      dias: seq.dias, feitoHoje: seq.feitoHoje, quebrou: false,
-      inicio: ordinalParaMs(ultimo - seq.dias + 1), referencia: ordinalParaMs(ultimo + 1)
+      dias: c.n, span: c.ultimo - c.primeiro + 1, feitoHoje: c.feitoHoje, quebrou: false,
+      inicio: ordinalParaMs(c.primeiro), referencia: ordinalParaMs(c.ultimo + 1),
+      descanso: !c.feitoHoje && ordinal(hoje) - c.ultimo < f, proximoEm: c.ultimo + f
     };
   }
 
@@ -176,7 +193,12 @@
     if (typeof dados.inicio !== 'number' || !isFinite(dados.inicio)) throw new Error('Data ou hora inválida.');
     if (dados.inicio > agora) throw new Error('A data de início não pode estar no futuro.');
     var custo = dados.tipo === 'parar' && typeof dados.custoDia === 'number' && dados.custoDia > 0 ? dados.custoDia : null;
-    return { id: id, nome: nome, tipo: dados.tipo, inicio: dados.inicio, custoDia: custo, recorde: 0, deslizes: [], tentativas: [], checkins: [] };
+    var freq = 1;
+    if (dados.tipo === 'manter' && dados.frequencia !== undefined) {
+      if (!frequenciaValida(dados.frequencia)) throw new Error('Escolha de quantos em quantos dias o hábito é feito.');
+      freq = dados.frequencia;
+    }
+    return { id: id, nome: nome, tipo: dados.tipo, inicio: dados.inicio, custoDia: custo, frequencia: freq, recorde: 0, deslizes: [], tentativas: [], checkins: [] };
   }
 
   /* Edita nome, início e custo, com as mesmas regras de `criarContagem`. O tipo não muda. */
@@ -184,9 +206,10 @@
     var base = criarContagem({
       nome: dados.nome, tipo: contagem.tipo,
       inicio: dados.inicio === undefined ? contagem.inicio : dados.inicio,
-      custoDia: dados.custoDia === undefined ? contagem.custoDia : dados.custoDia
+      custoDia: dados.custoDia === undefined ? contagem.custoDia : dados.custoDia,
+      frequencia: dados.frequencia === undefined ? contagem.frequencia : dados.frequencia
     }, agora, contagem.id);
-    return Object.assign({}, contagem, { nome: base.nome, inicio: base.inicio, custoDia: base.custoDia });
+    return Object.assign({}, contagem, { nome: base.nome, inicio: base.inicio, custoDia: base.custoDia, frequencia: base.frequencia });
   }
 
   /* Deslize não zera a sequência: só registra. */
@@ -261,6 +284,8 @@
       if (!ehNumero(c.inicio)) ruim(onde + ', início');
       if (c.custoDia === undefined) c.custoDia = null;
       if (c.custoDia !== null && !ehNumero(c.custoDia)) ruim(onde + ', custo');
+      if (c.frequencia === undefined) c.frequencia = 1;
+      if (!frequenciaValida(c.frequencia)) ruim(onde + ', frequência');
       if (c.recorde === undefined) c.recorde = 0;
       if (!ehNumero(c.recorde)) ruim(onde + ', recorde');
       ['deslizes', 'tentativas', 'checkins'].forEach(function (k) {
@@ -285,7 +310,7 @@
     var contagens = v1.counters.map(function (c, i) {
       if (!c || typeof c.start !== 'number' || !isFinite(c.start) || !c.id) throw new Error('Contagem v1 inválida: ' + JSON.stringify(c));
       var id = String(c.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || ('c' + (i + 1));
-      return { id: id, nome: String(c.name === undefined || c.name === null ? '' : c.name), tipo: 'parar', inicio: c.start, custoDia: null, recorde: c.best || 0, deslizes: [], tentativas: [], checkins: [] };
+      return { id: id, nome: String(c.name === undefined || c.name === null ? '' : c.name), tipo: 'parar', inicio: c.start, custoDia: null, frequencia: 1, recorde: c.best || 0, deslizes: [], tentativas: [], checkins: [] };
     });
     return { versao: 2, preferencias: preferenciasPadrao(fuso), contagens: contagens, atualizadoEm: v1.updatedAt || agora };
   }
@@ -326,7 +351,7 @@
     adicionarAnos: adicionarAnos, diasAteAniversario: diasAteAniversario, anosCompletos: anosCompletos,
     marcoDoDia: marcoDoDia, proximoMarco: proximoMarco, progressoCiclos: progressoCiclos,
     economia: economia, formatarReais: formatarReais,
-    sequenciaCheckins: sequenciaCheckins, maiorSequencia: maiorSequencia, registrarCheckin: registrarCheckin,
+    FREQ_MAX: FREQ_MAX, frequenciaValida: frequenciaValida, sequenciaCheckins: sequenciaCheckins, maiorSequencia: maiorSequencia, registrarCheckin: registrarCheckin,
     desfazerCheckin: desfazerCheckin, cicloManter: cicloManter, ordinalParaMs: ordinalParaMs,
     criarContagem: criarContagem, atualizarContagem: atualizarContagem, registrarDeslize: registrarDeslize, recomecar: recomecar, estatisticasParar: estatisticasParar,
     preferenciasPadrao: preferenciasPadrao, normalizarPreferencias: normalizarPreferencias, estadoVazio: estadoVazio, migrarV1: migrarV1, validarEstado: validarEstado,

@@ -227,7 +227,7 @@ test.describe('contagem: criar, deslize, recomeço', () => {
 
   test('cria com todos os campos do modelo v2', () => {
     assert.deepEqual(base(), {
-      id: 'a1', nome: 'Refrigerante', tipo: 'parar', inicio: atras(10), custoDia: 2,
+      id: 'a1', nome: 'Refrigerante', tipo: 'parar', inicio: atras(10), custoDia: 2, frequencia: 1,
       recorde: 0, deslizes: [], tentativas: [], checkins: []
     });
   });
@@ -317,7 +317,7 @@ test.describe('migração v1 -> v2', () => {
     const v2 = L.migrarV1(v1, AGORA, 'America/Sao_Paulo');
     assert.equal(v2.versao, 2);
     assert.deepEqual(v2.contagens[0], {
-      id: 'x1', nome: 'Refrigerante', tipo: 'parar', inicio: 1761000000000, custoDia: null,
+      id: 'x1', nome: 'Refrigerante', tipo: 'parar', inicio: 1761000000000, custoDia: null, frequencia: 1,
       recorde: 12, deslizes: [], tentativas: [], checkins: []
     });
     assert.deepEqual(v2.contagens.map((c) => c.inicio), [1761000000000, 1750000000123]);
@@ -432,7 +432,7 @@ test.describe('carregarOuMigrar', () => {
 
 test.describe('ciclo do tipo manter', () => {
   test('sem check-ins: zerado e sem "quebrou"', () => {
-    assert.deepEqual(L.cicloManter([], '2026-11-03'), { dias: 0, feitoHoje: false, inicio: null, referencia: null, quebrou: false });
+    assert.deepEqual(L.cicloManter([], '2026-11-03'), { dias: 0, span: 0, feitoHoje: false, inicio: null, referencia: null, quebrou: false, descanso: false, proximoEm: null });
   });
   test('check-in hoje: intervalo vai da meia-noite do 1º dia até a meia-noite depois de hoje', () => {
     const c = L.cicloManter(['2026-11-01', '2026-11-02', '2026-11-03'], '2026-11-03');
@@ -537,5 +537,86 @@ test.describe('preferências e visual', () => {
     const v2 = { versao: 2, preferencias: { horaResumo: '09:00', fuso: 'UTC', visual: 'classico' }, contagens: [], atualizadoEm: 1 };
     const s = armazenamentoFalso({ [L.CHAVE_V2]: JSON.stringify(v2) });
     assert.equal(L.carregarOuMigrar(s, AGORA).estado.preferencias.visual, 'classico');
+  });
+});
+
+/* ---------- hábito com frequência (a cada N dias) ---------- */
+const seq = (lista, hoje, f) => L.sequenciaCheckins(lista, hoje, f);
+
+test.describe('frequência do hábito', () => {
+  test('só aceita de 1 a 7 dias; o padrão é todo dia', () => {
+    assert.equal(L.FREQ_MAX, 7);
+    for (const f of [1, 2, 3, 4, 5, 6, 7]) assert.equal(L.criarContagem({ nome: 'x', tipo: 'manter', inicio: atras(1), frequencia: f }, AGORA, 'a').frequencia, f);
+    assert.equal(L.criarContagem({ nome: 'x', tipo: 'manter', inicio: atras(1) }, AGORA, 'a').frequencia, 1);
+    assert.equal(L.criarContagem({ nome: 'x', tipo: 'parar', inicio: atras(1), frequencia: 3 }, AGORA, 'a').frequencia, 1, 'parar ignora a frequência');
+    for (const f of [0, 8, 1.5, -1, '2', null, NaN]) assert.throws(() => L.criarContagem({ nome: 'x', tipo: 'manter', inicio: atras(1), frequencia: f }, AGORA, 'a'), /de quantos em quantos dias/);
+  });
+
+  test('editar muda a frequência e mantém o resto', () => {
+    const c = L.criarContagem({ nome: 'Perna', tipo: 'manter', inicio: atras(1) }, AGORA, 'a');
+    const e = L.atualizarContagem(Object.assign({}, c, { checkins: ['2026-11-01'] }), { nome: 'Perna', frequencia: 2 }, AGORA);
+    assert.equal(e.frequencia, 2); assert.deepEqual(e.checkins, ['2026-11-01']);
+    assert.equal(L.atualizarContagem(e, { nome: 'Perna' }, AGORA).frequencia, 2);
+  });
+
+  test('dados antigos sem frequência valem todo dia; valor inválido recusa o estado', () => {
+    const antigo = { versao: 2, contagens: [{ id: 'a1', nome: 'x', tipo: 'manter', inicio: 5, checkins: [] }] };
+    assert.equal(L.validarEstado(JSON.parse(JSON.stringify(antigo))).contagens[0].frequencia, 1);
+    assert.throws(() => L.validarEstado({ versao: 2, contagens: [{ id: 'a1', nome: 'x', tipo: 'manter', inicio: 5, checkins: [], frequencia: 9 }] }), /frequência/);
+  });
+
+  test('a cada 2 dias: seg, qua, sex continua; seg, qui quebra', () => {
+    assert.deepEqual(seq(['2026-11-02', '2026-11-04', '2026-11-06'], '2026-11-06', 2), { dias: 3, feitoHoje: true });
+    assert.equal(seq(['2026-11-02', '2026-11-05'], '2026-11-05', 2).dias, 1);
+    // todo dia continua exigindo o dia seguinte
+    assert.equal(seq(['2026-11-02', '2026-11-04', '2026-11-06'], '2026-11-06', 1).dias, 1);
+    assert.equal(seq(['2026-11-02', '2026-11-04', '2026-11-06'], '2026-11-06').dias, 1);
+  });
+
+  test('a sequência está viva até N dias depois do último; passou disso, quebrou', () => {
+    const l = ['2026-11-02', '2026-11-04'];
+    assert.deepEqual(seq(l, '2026-11-05', 2), { dias: 2, feitoHoje: false });  // descanso
+    assert.deepEqual(seq(l, '2026-11-06', 2), { dias: 2, feitoHoje: false });  // dia devido, ainda viva
+    assert.deepEqual(seq(l, '2026-11-07', 2), { dias: 0, feitoHoje: false });  // passou do prazo
+    assert.equal(seq(['2026-11-02'], '2026-11-09', 7).dias, 1);                // 1 vez por semana
+    assert.equal(seq(['2026-11-02'], '2026-11-10', 7).dias, 0);
+  });
+
+  test('check-in extra em dia de descanso entra na conta', () => {
+    assert.equal(seq(['2026-11-02', '2026-11-03', '2026-11-05'], '2026-11-05', 2).dias, 3);
+  });
+
+  test('recorde usa a mesma regra', () => {
+    const l = ['2026-10-01', '2026-10-03', '2026-10-05', '2026-10-20', '2026-10-22'];
+    assert.equal(L.maiorSequencia(l, 2), 3);
+    assert.equal(L.maiorSequencia(l, 1), 1);
+    assert.equal(L.maiorSequencia(l), 1);
+  });
+
+  test('ciclo: vezes, dias do calendário, descanso e próximo dia devido', () => {
+    const l = ['2026-11-02', '2026-11-04'];
+    let c = L.cicloManter(l, '2026-11-05', 2);
+    assert.equal(c.dias, 2); assert.equal(c.span, 3); assert.equal(c.descanso, true); assert.equal(c.feitoHoje, false);
+    assert.equal(c.proximoEm, L.ordinal('2026-11-06'));
+    assert.equal(c.inicio, new Date(2026, 10, 2).getTime()); assert.equal(c.referencia, new Date(2026, 10, 5).getTime());
+    c = L.cicloManter(l, '2026-11-06', 2);
+    assert.equal(c.descanso, false); assert.equal(c.feitoHoje, false); assert.equal(c.dias, 2);
+    c = L.cicloManter(l.concat('2026-11-06'), '2026-11-06', 2);
+    assert.equal(c.feitoHoje, true); assert.equal(c.descanso, false); assert.equal(c.dias, 3); assert.equal(c.span, 5);
+    assert.equal(c.proximoEm, L.ordinal('2026-11-08'));
+    c = L.cicloManter(l, '2026-11-09', 2);
+    assert.equal(c.dias, 0); assert.equal(c.quebrou, true); assert.equal(c.proximoEm, null); assert.equal(c.descanso, false);
+  });
+
+  test('todo dia: nunca há descanso e span é igual a dias', () => {
+    const c = L.cicloManter(['2026-11-01', '2026-11-02'], '2026-11-03', 1);
+    assert.equal(c.descanso, false); assert.equal(c.span, c.dias); assert.equal(c.dias, 2);
+  });
+
+  test('o marco usa os dias do calendário: a cada 2 dias, a 4ª vez fecha uma semana', () => {
+    const l = ['2026-11-01', '2026-11-03', '2026-11-05', '2026-11-07'];
+    const c = L.cicloManter(l, '2026-11-07', 2);
+    assert.equal(c.dias, 4); assert.equal(c.span, 7);
+    assert.equal(L.marcoDoDia(c.inicio, c.span).tipo, 'semana');
   });
 });
