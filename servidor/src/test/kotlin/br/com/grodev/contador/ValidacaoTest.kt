@@ -9,8 +9,8 @@ class ValidacaoTest {
 
     private fun contagem(
         id: String = "a1", nome: String = "Refrigerante", tipo: String = "parar", inicio: Long = agora - 86_400_000L * 7,
-        custoDia: Double? = null, checkins: List<String> = emptyList(),
-    ) = Contagem(id = id, nome = nome, tipo = tipo, inicio = inicio, custoDia = custoDia, checkins = checkins)
+        custoDia: Double? = null, checkins: List<String> = emptyList(), frequencia: Int = 1,
+    ) = Contagem(id = id, nome = nome, tipo = tipo, inicio = inicio, custoDia = custoDia, checkins = checkins, frequencia = frequencia)
 
     private fun estado(vararg c: Contagem, prefs: Preferencias = Preferencias()) = Estado(preferencias = prefs, contagens = c.toList())
 
@@ -19,6 +19,11 @@ class ValidacaoTest {
     @Test fun `estado vazio e padrão é válido`() = assertEquals(emptyList(), erros(Estado()))
 
     @Test fun `contagem comum é válida`() = assertEquals(emptyList(), erros(estado(contagem(custoDia = 6.5))))
+
+    @Test fun `frequência do hábito vai de 1 a 7`() {
+        (1..7).forEach { assertEquals(emptyList(), erros(estado(contagem(tipo = "manter", frequencia = it))), "frequência $it") }
+        listOf(0, 8, -1, 100).forEach { assertTrue(erros(estado(contagem(tipo = "manter", frequencia = it))).any { e -> "frequencia" in e }, "frequência $it") }
+    }
 
     @Test fun `versão diferente de 2 é recusada`() = assertTrue(erros(Estado(versao = 1)).any { "versao" in it })
 

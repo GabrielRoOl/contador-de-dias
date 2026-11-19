@@ -82,15 +82,18 @@ function gerarZona() {
   for (let i = 0; i < 40; i++) {
     const hoje = L.dataLocal(instante());
     const base = new Date(hoje + 'T12:00:00').getTime();
+    const freq = i < 10 ? 1 : inteiro(1, 7);
     const lista = [];
-    const comeco = inteiro(0, 3);
+    let atras = inteiro(0, freq + 2); // dias antes de hoje; os passos variam em volta da frequência (às vezes passam e quebram)
     const tam = inteiro(0, 12);
+    const dia = (n) => L.dataLocal(new Date(new Date(base).getFullYear(), new Date(base).getMonth(), new Date(base).getDate() - n).getTime());
     for (let k = 0; k < tam; k++) {
-      if (rnd() < 0.85) lista.push(L.dataLocal(new Date(new Date(base).getFullYear(), new Date(base).getMonth(), new Date(base).getDate() - comeco - k).getTime()));
+      if (rnd() < 0.9) lista.push(dia(atras));
+      atras += inteiro(1, freq + (rnd() < 0.15 ? 2 : 0));
     }
-    if (rnd() < 0.5) lista.push(L.dataLocal(new Date(new Date(base).getFullYear(), new Date(base).getMonth(), new Date(base).getDate() - inteiro(20, 90)).getTime()));
-    const c = L.cicloManter(lista, hoje);
-    ciclos.push({ checkins: lista, hoje, sequencia: L.sequenciaCheckins(lista, hoje), maior: L.maiorSequencia(lista), ciclo: c });
+    if (rnd() < 0.5) lista.push(dia(inteiro(20, 90)));
+    const c = L.cicloManter(lista, hoje, freq);
+    ciclos.push({ checkins: lista, hoje, freq, sequencia: L.sequenciaCheckins(lista, hoje, freq), maior: L.maiorSequencia(lista, freq), ciclo: c });
   }
 
   return { calcular, aniversarios, anosCompletos, marcos, ciclos };

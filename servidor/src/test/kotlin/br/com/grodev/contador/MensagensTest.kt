@@ -21,8 +21,8 @@ class MensagensTest {
     private fun parar(id: String, nome: String, dias: Int, custo: Double? = null, tentativas: List<Tentativa> = emptyList(), recorde: Int = 0) =
         Contagem(id, nome, "parar", inicioHa(dias), custo, recorde, emptyList(), tentativas, emptyList())
 
-    private fun manter(id: String, nome: String, checkins: List<String>) =
-        Contagem(id, nome, "manter", inicioHa(30), null, 0, emptyList(), emptyList(), checkins)
+    private fun manter(id: String, nome: String, checkins: List<String>, frequencia: Int = 1) =
+        Contagem(id, nome, "manter", inicioHa(30), null, 0, emptyList(), emptyList(), checkins, frequencia)
 
     private fun datas(vararg atras: Int) = atras.map { hoje.minusDays(it.toLong()).toString() }
 
@@ -167,5 +167,34 @@ class MensagensTest {
         assertEquals(Mensagens.compor(cheio, agora, sp), Mensagens.compor(reduzido, agora, sp))
         assertTrue(reduzido.contagens.all { it.deslizes.isEmpty() && it.tentativas.all { t -> t.nota.isEmpty() } && it.tentativas.size <= 1 })
         assertEquals(cheio.contagens.map { it.checkins.toSet() }, reduzido.contagens.map { it.checkins.toSet() })
+    }
+
+    // ---------- hábito a cada N dias ----------
+
+    @Test fun `a cada 2 dias, no dia de descanso não pergunta e diz quando é a próxima vez`() {
+        val a = assertNotNull(aviso(manter("m", "treinando perna", datas(5, 3, 1), frequencia = 2)))
+        assertTrue("3 vezes seguidas treinando perna" in a.corpo, a.corpo)
+        assertTrue("descanso" in a.corpo && "amanhã" in a.corpo, a.corpo)
+        assertFalse("?" in a.corpo, a.corpo)
+    }
+
+    @Test fun `a cada 2 dias, no dia devido pergunta como o hábito diário`() {
+        val a = assertNotNull(aviso(manter("m", "treinando perna", datas(6, 4, 2), frequencia = 2)))
+        assertTrue("3 vezes seguidas treinando perna" in a.corpo && "?" in a.corpo, a.corpo)
+    }
+
+    @Test fun `a cada 2 dias, passou do prazo vira retomada`() {
+        val a = assertNotNull(aviso(manter("m", "treinando perna", datas(9, 7, 5), frequencia = 2)))
+        assertFalse("seguidas" in a.corpo, a.corpo)
+    }
+
+    @Test fun `a cada 3 dias com descanso longo fala em quantos dias`() {
+        val a = assertNotNull(aviso(manter("m", "treinando perna", datas(1), frequencia = 3)))
+        assertTrue("1 vez seguida" in a.corpo && "em 2 dias" in a.corpo, a.corpo)
+    }
+
+    @Test fun `todo dia continua igual a antes`() {
+        val a = assertNotNull(aviso(manter("m", "inglês", datas(2, 1))))
+        assertTrue("2 dias seguidos inglês" in a.corpo && "vez" !in a.corpo, a.corpo)
     }
 }
