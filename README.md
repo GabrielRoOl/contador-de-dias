@@ -26,7 +26,7 @@ As imagens são geradas com dados inventados por `python3 scripts/capturas.py`.
 
 **Contagens**
 - **Parar** (ex.: "refrigerante"): mostra a sequência atual, o recorde, o total de dias acumulados e as tentativas. O *deslize* não zera nada: registra o escorregão (com uma nota opcional) e segue. *Recomecei* encerra a tentativa, guarda no histórico e começa outra, no tom sem culpa.
-- **Manter** (ex.: "estudar inglês"): check-in diário com um toque. A sequência conta dias seguidos; pular um dia quebra.
+- **Manter** (ex.: "estudar inglês", "treinar perna"): check-in com um toque. Por padrão é todo dia e pular um dia quebra a sequência. Dá para escolher a frequência (a cada 2, 3, 4, 5 ou 6 dias, ou 1 vez por semana): a sequência conta as vezes feitas e continua enquanto o intervalo entre dois "Fiz" for de no máximo N dias. No dia de descanso o botão fica desligado e o cartão diz quando é a próxima vez; a notificação também não cobra nesses dias.
 - **Marcos recorrentes**: semana (7 dias), mês (30) e ano (aniversário do calendário, com bissexto). Três anéis concêntricos mostram o progresso de cada ciclo, e o maior vale quando os dias coincidem.
 - **Economia**: com um custo por dia, o app soma quanto você já poupou.
 - Data de início no passado, tema claro, escuro ou automático, e dois visuais (futurista e clássico).
