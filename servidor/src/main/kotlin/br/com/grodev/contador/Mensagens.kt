@@ -63,20 +63,27 @@ object Mensagens {
         return Linha(texto, curto, marco, pendente = false, economia = eco ?: 0.0)
     }
 
+    /** "amanhã" ou "em 3 dias", para o próximo dia devido de um hábito com frequência. */
+    private fun quando(dias: Long): String = if (dias <= 1) "amanhã" else "em $dias dias"
+
     private fun linhaManter(c: Contagem, hoje: java.time.LocalDate, zona: ZoneId): Linha {
-        val ciclo = Logica.cicloManter(c.checkins, hoje, zona)
+        val freq = Logica.normFreq(c.frequencia)
+        val ciclo = Logica.cicloManter(c.checkins, hoje, zona, freq)
         val seed = "${c.id}:${ciclo.dias}:$hoje"
         val pergunta = Textos.escolher(PERGUNTAS, seed)
-        // O marco só vale quando o check-in de hoje foi o que completou o ciclo
-        val marco = if (ciclo.feitoHoje && ciclo.inicio != null) Logica.marcoDoDia(ciclo.inicio, ciclo.dias, zona) else null
-        val pendente = !ciclo.feitoHoje
+        // O marco só vale quando o check-in de hoje foi o que completou o ciclo (em dias do calendário)
+        val marco = if (ciclo.feitoHoje && ciclo.inicio != null) Logica.marcoDoDia(ciclo.inicio, ciclo.span, zona) else null
+        val pendente = !ciclo.feitoHoje && !ciclo.descanso
+        // Todo dia: "10 dias seguidos". A cada N dias a conta é em vezes: "4 vezes seguidas".
+        val seguidos = if (freq == 1) "${Textos.dias(ciclo.dias)} seguidos" else "${ciclo.dias} ${if (ciclo.dias == 1) "vez seguida" else "vezes seguidas"}"
         val texto = when {
-            marco != null -> Textos.marco(Textos.MarcoCtx("manter", c.nome, ciclo.dias, marco, seed))
-            ciclo.dias > 0 -> "${Textos.dias(ciclo.dias)} seguidos ${c.nome}." + if (pendente) " $pergunta" else ""
-            ciclo.quebrou -> Textos.retomada(Textos.RetomadaCtx("manter", Logica.maiorSequencia(c.checkins), seed))
+            marco != null -> Textos.marco(Textos.MarcoCtx("manter", c.nome, ciclo.span, marco, seed))
+            ciclo.descanso -> "$seguidos ${c.nome}. Hoje é descanso; próxima vez ${quando(ciclo.proximoEm!! - hoje.toEpochDay())}."
+            ciclo.dias > 0 -> "$seguidos ${c.nome}." + if (pendente) " $pergunta" else ""
+            ciclo.quebrou -> Textos.retomada(Textos.RetomadaCtx("manter", Logica.maiorSequencia(c.checkins, freq), seed))
             else -> "Marque o primeiro dia de ${c.nome} quando quiser."
         }
-        val curto = if (ciclo.dias > 0) "${Textos.dias(ciclo.dias)} ${c.nome}" else "${c.nome}: recomece hoje"
+        val curto = if (ciclo.dias > 0) "${if (freq == 1) Textos.dias(ciclo.dias) else "${ciclo.dias} ${if (ciclo.dias == 1) "vez" else "vezes"}"} ${c.nome}" else "${c.nome}: recomece hoje"
         return Linha(texto, curto, marco, pendente, economia = 0.0)
     }
 }
