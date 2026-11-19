@@ -22,7 +22,11 @@ object Logica {
     data class Marco(val tipo: String, val n: Int)
     data class ProximoMarco(val dia: Int, val tipo: String, val n: Int, val faltam: Double)
     data class Sequencia(val dias: Int, val feitoHoje: Boolean)
-    data class CicloManter(val dias: Int, val feitoHoje: Boolean, val inicio: Long?, val referencia: Long?, val quebrou: Boolean)
+    /** `dias` são as vezes feitas seguidas; `span`, os dias do calendário entre o primeiro e o último "Fiz" (com frequência 1 são iguais). */
+    data class CicloManter(
+        val dias: Int, val feitoHoje: Boolean, val inicio: Long?, val referencia: Long?, val quebrou: Boolean,
+        val span: Int = 0, val descanso: Boolean = false, val proximoEm: Long? = null,
+    )
     data class EstatisticasParar(val sequenciaAtual: Int, val recorde: Int, val totalDias: Int, val deslizes: Int, val tentativas: Int)
 
     fun dataLocal(ms: Long, zona: ZoneId): LocalDate = Instant.ofEpochMilli(ms).atZone(zona).toLocalDate()
@@ -79,23 +83,42 @@ object Logica {
     private fun conjunto(checkins: List<String>): Set<Long> =
         checkins.mapNotNull { runCatching { LocalDate.parse(it).toEpochDay() }.getOrNull() }.toSet()
 
-    /** Dias consecutivos terminando hoje. Se hoje ainda não foi marcado, a sequência de ontem segue viva até o fim do dia. */
-    fun sequenciaCheckins(checkins: List<String>, hoje: LocalDate): Sequencia {
-        val set = conjunto(checkins)
+    const val FREQ_MAX = 7
+
+    /** A cada quantos dias o hábito é feito: 1 (todo dia) a 7. Qualquer outra coisa vale 1. */
+    fun normFreq(f: Int): Int = if (f in 1..FREQ_MAX) f else 1
+
+    private class Cadeia(val n: Int, val primeiro: Long, val ultimo: Long, val feitoHoje: Boolean)
+
+    /**
+     * A sequência continua enquanto dois "Fiz" seguidos estiverem a no máximo `freq` dias um do outro. Está viva até `freq`
+     * dias depois do último "Fiz"; passou disso, quebrou. Conta as vezes feitas. Igual ao `cadeiaAtual` do logica.js.
+     */
+    private fun cadeiaAtual(checkins: List<String>, hoje: LocalDate, freq: Int): Cadeia? {
+        val f = normFreq(freq)
         val h = hoje.toEpochDay()
-        val feitoHoje = h in set
-        val fim = if (feitoHoje) h else if ((h - 1) in set) h - 1 else return Sequencia(0, false)
-        var n = 0
-        while ((fim - n) in set) n++
-        return Sequencia(n, feitoHoje)
+        val dias = conjunto(checkins).filter { it <= h }.sorted()
+        if (dias.isEmpty()) return null
+        val ultimo = dias.last()
+        if (h - ultimo > f) return null
+        var i = dias.size - 1
+        while (i > 0 && dias[i] - dias[i - 1] <= f) i--
+        return Cadeia(dias.size - i, dias[i], ultimo, ultimo == h)
     }
 
-    fun maiorSequencia(checkins: List<String>): Int {
+    /** Vezes seguidas até hoje. Com freq 1: dias consecutivos terminando hoje (ontem ainda vale até o fim do dia). */
+    fun sequenciaCheckins(checkins: List<String>, hoje: LocalDate, freq: Int = 1): Sequencia {
+        val c = cadeiaAtual(checkins, hoje, freq) ?: return Sequencia(0, false)
+        return Sequencia(c.n, c.feitoHoje)
+    }
+
+    fun maiorSequencia(checkins: List<String>, freq: Int = 1): Int {
+        val f = normFreq(freq)
         val dias = conjunto(checkins).sorted()
         var maior = 0
         var atual = 0
         dias.forEachIndexed { i, d ->
-            atual = if (i > 0 && d == dias[i - 1] + 1) atual + 1 else 1
+            atual = if (i > 0 && d - dias[i - 1] <= f) atual + 1 else 1
             if (atual > maior) maior = atual
         }
         return maior
@@ -104,11 +127,13 @@ object Logica {
     private fun meiaNoite(epochDay: Long, zona: ZoneId): Long =
         LocalDate.ofEpochDay(epochDay).atStartOfDay(zona).toInstant().toEpochMilli()
 
-    fun cicloManter(checkins: List<String>, hoje: LocalDate, zona: ZoneId): CicloManter {
-        val seq = sequenciaCheckins(checkins, hoje)
-        if (seq.dias == 0) return CicloManter(0, false, null, null, checkins.isNotEmpty())
-        val ultimo = hoje.toEpochDay() - (if (seq.feitoHoje) 0 else 1)
-        return CicloManter(seq.dias, seq.feitoHoje, meiaNoite(ultimo - seq.dias + 1, zona), meiaNoite(ultimo + 1, zona), false)
+    fun cicloManter(checkins: List<String>, hoje: LocalDate, zona: ZoneId, freq: Int = 1): CicloManter {
+        val f = normFreq(freq)
+        val c = cadeiaAtual(checkins, hoje, f) ?: return CicloManter(0, false, null, null, checkins.isNotEmpty())
+        return CicloManter(
+            dias = c.n, feitoHoje = c.feitoHoje, inicio = meiaNoite(c.primeiro, zona), referencia = meiaNoite(c.ultimo + 1, zona), quebrou = false,
+            span = (c.ultimo - c.primeiro + 1).toInt(), descanso = !c.feitoHoje && hoje.toEpochDay() - c.ultimo < f, proximoEm = c.ultimo + f,
+        )
     }
 
     // ---------- parar ----------

@@ -29,6 +29,8 @@ data class Contagem(
     val deslizes: List<Deslize> = emptyList(),
     val tentativas: List<Tentativa> = emptyList(),
     val checkins: List<String> = emptyList(),
+    /** A cada quantos dias o hábito (tipo manter) é feito: 1 = todo dia, até 7 = uma vez por semana. */
+    val frequencia: Int = 1,
 )
 
 @Serializable

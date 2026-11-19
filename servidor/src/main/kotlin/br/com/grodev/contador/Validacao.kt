@@ -49,6 +49,7 @@ object Validacao {
             if (c.inicio < 0 || c.inicio > limiteFuturo) erro("$onde.inicio fora do intervalo")
             if (c.custoDia != null && (!c.custoDia.isFinite() || c.custoDia <= 0 || c.custoDia > 1_000_000)) erro("$onde.custoDia inválido")
             if (c.tipo == "manter" && c.custoDia != null) erro("$onde.custoDia só vale para o tipo parar")
+            if (c.frequencia < 1 || c.frequencia > Logica.FREQ_MAX) erro("$onde.frequencia deve ir de 1 a ${Logica.FREQ_MAX}")
             if (c.recorde < 0 || c.recorde > 100_000) erro("$onde.recorde fora do intervalo")
             if (c.deslizes.size > MAX_DESLIZES) erro("$onde.deslizes demais")
             if (c.tentativas.size > MAX_TENTATIVAS) erro("$onde.tentativas demais")
