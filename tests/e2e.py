@@ -25,7 +25,7 @@ def foto(pg, nome):
         pg.screenshot(path=os.path.join(CAPTURAS, nome + '.png'), full_page=True)
 
 
-def nova_contagem(pg, tipo, nome, data=None, custo=None):
+def nova_contagem(pg, tipo, nome, data=None, custo=None, freq=None):
     if not pg.evaluate("document.getElementById('nova').open"):
         pg.click('#toggle-form')
     pg.check(f'input[name=f-tipo][value={tipo}]', force=True)
@@ -35,6 +35,8 @@ def nova_contagem(pg, tipo, nome, data=None, custo=None):
         pg.fill('#f-time', '00:00')
         if custo:
             pg.fill('#f-custo', custo)
+    elif freq:
+        pg.select_option('#f-freq', str(freq))
     pg.click('#new-form button[type=submit]')
     pg.wait_for_function("!document.getElementById('nova').open")
 
@@ -157,6 +159,42 @@ try:
         check(m.locator('.num').inner_text() == '0' and m.get_by_role('button', name='Hoje eu fiz').count() == 1, 'desfazer check-in volta a 0')
         m.get_by_role('button', name='Hoje eu fiz').click()
         foto(pg, '08-manter-feito')
+
+        # --- manter com frequência (a cada N dias)
+        pg.click('#toggle-form'); pg.locator('input[name=f-tipo][value=manter]').click()
+        check(pg.locator('#f-freq option').all_inner_texts() == ['Todo dia', 'A cada 2 dias', 'A cada 3 dias', 'A cada 4 dias', 'A cada 5 dias', 'A cada 6 dias', '1 vez por semana'] and pg.locator('#f-freq').input_value() == '1', 'frequência: o formulário oferece de todo dia a 1 vez por semana, com todo dia marcado')
+        pg.select_option('#f-freq', '2')
+        check('só no dia devido' in pg.locator('#f-freq-dica').inner_text() and 'a cada 2 dias' in pg.locator('#f-freq-dica').inner_text(), 'frequência: a dica explica a regra escolhida')
+        pg.locator('input[name=f-tipo][value=parar]').click(); check(pg.locator('#f-freq').is_hidden(), 'frequência: só aparece para o hábito')
+        pg.keyboard.press('Escape')
+        nova_contagem(pg, 'manter', 'treinando perna', freq=2)
+        p_ = card(pg, 'treinando perna')
+        p_.get_by_role('button', name='Hoje eu fiz').click(); p_ = card(pg, 'treinando perna')
+        check(p_.locator('.num').inner_text() == '1' and 'vez seguida' in p_.inner_text().lower() and 'Próxima vez em 2 dias' in p_.inner_text(), 'frequência: a cada 2 dias conta vezes e diz quando é a próxima')
+        foto(pg, '08b-manter-a-cada-2-dias')
+        def com_checkins(offsets):
+            pg.evaluate("""(offs) => {
+              const k = 'contagem-de-dias:v2', e = JSON.parse(localStorage.getItem(k));
+              const c = e.contagens.find((x) => x.nome === 'treinando perna');
+              const f = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+              c.checkins = offs.map(f); localStorage.setItem(k, JSON.stringify(e));
+            }""", offsets)
+            pg.reload(); pg.wait_for_selector('.card')
+            return card(pg, 'treinando perna')
+        p_ = com_checkins([1, 3])
+        check(p_.locator('.num').inner_text() == '2' and 'Hoje é descanso' in p_.inner_text() and 'amanhã' in p_.inner_text() and p_.get_by_role('button', name='Dia de descanso').is_disabled() and p_.get_by_role('button', name='Hoje eu fiz').count() == 0, 'frequência: no dia de descanso a sequência segue, o botão fica desligado e diz quando volta')
+        foto(pg, '08c-manter-descanso')
+        p_ = com_checkins([2, 4])
+        check(p_.locator('.num').inner_text() == '2' and 'Falta marcar hoje' in p_.inner_text() and p_.get_by_role('button', name='Hoje eu fiz').is_enabled(), 'frequência: no dia devido o botão volta e a sequência continua viva')
+        p_ = com_checkins([3, 5])
+        check(p_.locator('.num').inner_text() == '0' and p_.get_by_role('button', name='Hoje eu fiz').is_enabled(), 'frequência: passou do prazo, a sequência quebra e o botão volta')
+        p_.get_by_role('button', name='Editar').click()
+        check(pg.locator('select[id^=ef-]').input_value() == '2', 'frequência: o editar mostra a frequência atual')
+        pg.select_option('select[id^=ef-]', '1'); pg.get_by_role('button', name='Salvar').click()
+        p_ = card(pg, 'treinando perna')
+        check(p_.get_by_role('button', name='Hoje eu fiz').is_enabled() and 'Todo dia' not in p_.inner_text(), 'frequência: trocar para todo dia pelo editar funciona')
+        p_.get_by_role('button', name='Excluir').click(); p_.get_by_role('button', name='Excluir').click()
+        check(card(pg, 'treinando perna').count() == 0, 'frequência: o cartão de teste é excluído')
 
         # --- ajustes: engrenagem abre uma janela (dialog)
         check(pg.locator('#toggle-ajustes').get_attribute('aria-label') == 'Ajustes' and pg.locator('#toggle-ajustes svg').count() == 1, 'engrenagem é só um ícone, com rótulo acessível')
