@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="app.css?v=36">
+<link rel="stylesheet" href="app.css?v=38">
 <script>try{var p=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias,r=document.documentElement;if(p.visual)r.setAttribute('data-visual',p.visual);if(p.modo==='claro')r.setAttribute('data-theme','light');else if(p.modo==='escuro')r.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
@@ -164,7 +164,11 @@
       <input id="f-custo" type="text" inputmode="decimal" placeholder="Ex.: 6,50" autocomplete="off">
       <p class="hint">Com o valor, o app mostra quanto você já economizou.</p>
     </div>
-    <p class="hint" data-so="manter" hidden>Você marca &ldquo;Hoje eu fiz&rdquo; todo dia. Pular um dia recomeça a sequência.</p>
+    <div class="field" data-so="manter" hidden>
+      <label for="f-freq">Com que frequência</label>
+      <select id="f-freq"></select>
+      <p class="hint" id="f-freq-dica">Você marca &ldquo;Hoje eu fiz&rdquo; todo dia. Pular um dia recomeça a sequência.</p>
+    </div>
     <p class="error" id="f-error" role="alert"></p>
     <button class="btn primary" type="submit">Iniciar contagem</button>
   </form>
@@ -291,12 +295,12 @@
   </div>
 </dialog>
 
-<script src="logica.js?v=36"></script>
-<script src="textos.js?v=36"></script>
-<script src="pomodoro.js?v=36"></script>
-<script src="cronograma.js?v=36"></script>
-<script src="armazem.js?v=36"></script>
-<script src="sincronia.js?v=36"></script>
-<script src="app.js?v=36"></script>
+<script src="logica.js?v=38"></script>
+<script src="textos.js?v=38"></script>
+<script src="pomodoro.js?v=38"></script>
+<script src="cronograma.js?v=38"></script>
+<script src="armazem.js?v=38"></script>
+<script src="sincronia.js?v=38"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>

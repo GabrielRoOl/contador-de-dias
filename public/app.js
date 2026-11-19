@@ -142,22 +142,40 @@
     return html;
   }
 
+  /* Frequência do hábito: de quantos em quantos dias ele é feito (1 = todo dia, 7 = uma vez por semana). */
+  function rotuloFreq(f) { return f === 1 ? 'Todo dia' : f === 7 ? '1 vez por semana' : 'A cada ' + f + ' dias'; }
+  function opcoesFreq(selecionada) {
+    var html = '';
+    for (var f = 1; f <= L.FREQ_MAX; f++) html += '<option value="' + f + '"' + (f === selecionada ? ' selected' : '') + '>' + rotuloFreq(f) + '</option>';
+    return html;
+  }
+  function dicaFreq(f) {
+    return f === 1 ? 'Você marca “Hoje eu fiz” todo dia. Pular um dia recomeça a sequência.'
+      : 'Você marca “Hoje eu fiz” só no dia devido, ' + (f === 7 ? 'uma vez por semana' : 'a cada ' + f + ' dias') + '. Passar do prazo sem marcar recomeça a sequência.';
+  }
+  function quando(dias) { return dias <= 1 ? 'amanhã' : 'em ' + dias + ' dias'; }
+  function proximaVez(ciclo, h) { return quando(ciclo.proximoEm - L.ordinal(h)); }
+
   function liveManter(c, agora) {
     var h = hoje();
-    var ciclo = L.cicloManter(c.checkins, h);
-    var base = ciclo.dias > 0 ? ciclo : { inicio: L.ordinalParaMs(L.ordinal(h)), referencia: L.ordinalParaMs(L.ordinal(h)) };
+    var f = c.frequencia || 1;
+    var ciclo = L.cicloManter(c.checkins, h, f);
+    var base = ciclo.dias > 0 ? ciclo : { inicio: L.ordinalParaMs(L.ordinal(h)), referencia: L.ordinalParaMs(L.ordinal(h)), span: 0 };
     var p = L.progressoCiclos(base.inicio, base.referencia);
-    var recorde = Math.max(L.maiorSequencia(c.checkins), ciclo.dias);
-    var html = aneisHTML(p, numHTML(ciclo.dias) + '<span class="unit">' + plural(ciclo.dias, 'dia seguido', 'dias seguidos') + '</span>') + legendaHTML(p);
-    if (!ciclo.feitoHoje) html += '<p class="hm-fora">' + (ciclo.dias > 0 ? 'Falta marcar hoje.' : 'Marque o primeiro dia quando quiser.') + '</p>';
-    var m = ciclo.feitoHoje ? L.marcoDoDia(base.inicio, ciclo.dias) : null;
-    if (m) html += '<p class="marco ' + m.tipo + '">' + esc(T.marco({ tipoContagem: 'manter', nome: c.nome, dias: ciclo.dias, marco: m, seed: c.id + ':' + ciclo.dias })) + '</p>';
+    var recorde = Math.max(L.maiorSequencia(c.checkins, f), ciclo.dias);
+    var unidade = f === 1 ? plural(ciclo.dias, 'dia seguido', 'dias seguidos') : plural(ciclo.dias, 'vez seguida', 'vezes seguidas');
+    var html = aneisHTML(p, numHTML(ciclo.dias) + '<span class="unit">' + unidade + '</span>') + legendaHTML(p);
+    if (ciclo.descanso) html += '<p class="hm-fora">Hoje é descanso. Próxima vez ' + proximaVez(ciclo, h) + '.</p>';
+    else if (ciclo.feitoHoje && f > 1) html += '<p class="hm-fora">Próxima vez ' + proximaVez(ciclo, h) + '.</p>';
+    else if (!ciclo.feitoHoje) html += '<p class="hm-fora">' + (ciclo.dias > 0 ? 'Falta marcar hoje.' : f === 1 ? 'Marque o primeiro dia quando quiser.' : 'Marque a primeira vez quando quiser.') + '</p>';
+    var m = ciclo.feitoHoje ? L.marcoDoDia(base.inicio, ciclo.span) : null;
+    if (m) html += '<p class="marco ' + m.tipo + '">' + esc(T.marco({ tipoContagem: 'manter', nome: c.nome, dias: ciclo.span, marco: m, seed: c.id + ':' + ciclo.span })) + '</p>';
     else if (ciclo.quebrou) html += '<p class="retomada">' + esc(T.retomada({ tipoContagem: 'manter', recorde: recorde, seed: c.id + ':' + h })) + '</p>';
     if (ciclo.dias > 0) {
-      var prox = L.proximoMarco(base.inicio, ciclo.dias);
+      var prox = L.proximoMarco(base.inicio, ciclo.span);
       html += '<p class="next">' + T.proxima(prox, prox.faltam) + '</p>';
     }
-    html += '<dl class="stats">' + statHTML('Recorde', T.dias(recorde)) + statHTML('Check-ins', c.checkins.length) + '</dl>';
+    html += '<dl class="stats">' + statHTML('Recorde', f === 1 ? T.dias(recorde) : recorde + ' ' + plural(recorde, 'vez', 'vezes')) + statHTML('Check-ins', c.checkins.length) + '</dl>';
     return html;
   }
 
@@ -196,6 +214,7 @@
     var parar = c.tipo === 'parar';
     return '<form class="editform" data-form="editar" data-id="' + esc(c.id) + '" novalidate>' +
       '<div class="field"><label for="en-' + esc(c.id) + '">Nome</label><input id="en-' + esc(c.id) + '" type="text" maxlength="60" value="' + esc(c.nome) + '"></div>' +
+      (!parar ? '<div class="field"><label for="ef-' + esc(c.id) + '">Com que frequência</label><select id="ef-' + esc(c.id) + '">' + opcoesFreq(c.frequencia || 1) + '</select></div>' : '') +
       (parar ? '<div class="row2"><div class="field"><label for="ed-' + esc(c.id) + '">Data de início</label><input id="ed-' + esc(c.id) + '" type="date" max="' + hoje() + '" value="' + L.dataLocal(c.inicio) + '"></div>' +
         '<div class="field"><label for="et-' + esc(c.id) + '">Hora</label><input id="et-' + esc(c.id) + '" type="time" value="' + toTimeInput(c.inicio) + '"></div></div>' +
         '<div class="field"><label for="ec-' + esc(c.id) + '">Custo por dia (opcional)</label><input id="ec-' + esc(c.id) + '" type="text" inputmode="decimal" value="' + (c.custoDia ? String(c.custoDia).replace('.', ',') : '') + '"></div>' : '') +
@@ -221,7 +240,9 @@
       var feito = c.checkins.indexOf(hoje()) !== -1;
       html += feito
         ? '<div class="confirm"><p class="checkin-feito">Feito hoje.</p><div class="actions"><button class="btn small" type="button" data-act="desfazer-checkin" data-id="' + esc(c.id) + '">Desfazer</button></div></div>'
-        : '<button class="btn primary big" type="button" data-act="checkin" data-id="' + esc(c.id) + '">Hoje eu fiz</button>';
+        : L.cicloManter(c.checkins, hoje(), c.frequencia || 1).descanso
+          ? '<button class="btn big" type="button" disabled>Dia de descanso</button>'
+          : '<button class="btn primary big" type="button" data-act="checkin" data-id="' + esc(c.id) + '">Hoje eu fiz</button>';
       return html + '<div class="actions"><button class="btn small" type="button" data-act="painel" data-tipo="editar" data-id="' + esc(c.id) + '">Editar</button>' +
         '<button class="btn small danger" type="button" data-act="painel" data-tipo="excluir" data-id="' + esc(c.id) + '">Excluir</button></div>';
     }
@@ -301,6 +322,8 @@
     document.getElementById('f-date').value = L.dataLocal(agora);
     document.getElementById('f-time').value = toTimeInput(agora);
     document.getElementById('f-custo').value = '';
+    document.getElementById('f-freq').innerHTML = opcoesFreq(1);
+    document.getElementById('f-freq-dica').textContent = dicaFreq(1);
     document.getElementById('f-error').textContent = '';
     ajustarFormulario();
   }
@@ -536,6 +559,7 @@
   });
 
   document.querySelectorAll('input[name="f-tipo"]').forEach(function (r) { r.addEventListener('change', ajustarFormulario); });
+  document.getElementById('f-freq').addEventListener('change', function () { document.getElementById('f-freq-dica').textContent = dicaFreq(Number(this.value)); });
 
   document.getElementById('new-form').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -551,6 +575,8 @@
         if (!d) throw new Error('Escolha a data de início.');
         dados.inicio = dataHoraInput(d, document.getElementById('f-time').value);
         dados.custoDia = parseValor(document.getElementById('f-custo').value);
+      } else {
+        dados.frequencia = Number(document.getElementById('f-freq').value);
       }
       estado.contagens.push(L.criarContagem(dados, agora, newId()));
     } catch (ex) { err.textContent = ex.message; return; }
@@ -623,6 +649,8 @@
           if (!dd) throw new Error('Escolha a data de início.');
           dados.inicio = dataHoraInput(dd, document.getElementById('et-' + id).value);
           dados.custoDia = parseValor(document.getElementById('ec-' + id).value);
+        } else {
+          dados.frequencia = Number(document.getElementById('ef-' + id).value);
         }
         substituir(L.atualizarContagem(c, dados, agora));
       }
