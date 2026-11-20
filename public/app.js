@@ -144,10 +144,66 @@
 
   /* Frequência do hábito: de quantos em quantos dias ele é feito (1 = todo dia, 7 = uma vez por semana). */
   function rotuloFreq(f) { return f === 1 ? 'Todo dia' : f === 7 ? '1 vez por semana' : 'A cada ' + f + ' dias'; }
-  function opcoesFreq(selecionada) {
-    var html = '';
-    for (var f = 1; f <= L.FREQ_MAX; f++) html += '<option value="' + f + '"' + (f === selecionada ? ' selected' : '') + '>' + rotuloFreq(f) + '</option>';
-    return html;
+  /* Seletor próprio (botão que abre uma lista) no lugar do <select>: a lista nativa é desenhada pelo navegador e não segue o
+     tema. O valor fica num <input type="hidden" id="{id}"> (que dispara `change`), então se lê como um campo comum. */
+  function seletorHTML(id, rotuloId, opcoes, atual) {
+    var sel = opcoes.filter(function (o) { return o.valor === atual; })[0] || opcoes[0];
+    return '<div class="sel"><input type="hidden" id="' + id + '" value="' + esc(String(sel.valor)) + '">' +
+      '<button type="button" class="sel-btn" id="' + id + '-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="' + id + '-lista" aria-labelledby="' + rotuloId + ' ' + id + '-btn">' + esc(sel.rotulo) + '</button>' +
+      '<ul class="sel-lista" id="' + id + '-lista" role="listbox" aria-labelledby="' + rotuloId + '" tabindex="-1" hidden>' +
+      opcoes.map(function (o) {
+        return '<li role="option" id="' + id + '-op-' + esc(String(o.valor)) + '" data-valor="' + esc(String(o.valor)) + '" aria-selected="' + (o === sel ? 'true' : 'false') + '">' + esc(o.rotulo) + '</li>';
+      }).join('') + '</ul></div>';
+  }
+  function selAbrir(sel, abrir) {
+    var lista = sel.querySelector('.sel-lista'), btn = sel.querySelector('.sel-btn');
+    lista.hidden = !abrir; btn.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+    if (abrir) { selAtivar(sel, lista.querySelector('[aria-selected=true]') || lista.firstElementChild); lista.focus(); }
+    else lista.removeAttribute('aria-activedescendant');
+  }
+  function selAtivar(sel, li) {
+    var lista = sel.querySelector('.sel-lista');
+    Array.prototype.forEach.call(lista.children, function (x) { x.classList.toggle('ativo', x === li); });
+    if (li) { lista.setAttribute('aria-activedescendant', li.id); if (li.scrollIntoView) li.scrollIntoView({ block: 'nearest' }); }
+  }
+  function selEscolher(sel, li) {
+    var campo = sel.querySelector('input[type=hidden]'), mudou = campo.value !== li.getAttribute('data-valor');
+    campo.value = li.getAttribute('data-valor');
+    sel.querySelector('.sel-btn').textContent = li.textContent;
+    Array.prototype.forEach.call(sel.querySelector('.sel-lista').children, function (x) { x.setAttribute('aria-selected', x === li ? 'true' : 'false'); });
+    selAbrir(sel, false);
+    sel.querySelector('.sel-btn').focus();
+    if (mudou) campo.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  document.addEventListener('click', function (e) {
+    var sel = e.target.closest ? e.target.closest('.sel') : null;
+    document.querySelectorAll('.sel .sel-lista:not([hidden])').forEach(function (l) { if (l.parentNode !== sel) selAbrir(l.parentNode, false); });
+    if (!sel) return;
+    var li = e.target.closest('.sel-lista li');
+    if (li) selEscolher(sel, li);
+    else if (e.target.closest('.sel-btn')) selAbrir(sel, sel.querySelector('.sel-lista').hidden);
+  });
+  document.addEventListener('keydown', function (e) {
+    var sel = e.target.closest ? e.target.closest('.sel') : null;
+    if (!sel) return;
+    var lista = sel.querySelector('.sel-lista'), aberta = !lista.hidden, k = e.key;
+    if (!aberta) {
+      if (e.target.closest('.sel-btn') && (k === 'ArrowDown' || k === 'ArrowUp')) { e.preventDefault(); selAbrir(sel, true); }
+      return;
+    }
+    var itens = Array.prototype.slice.call(lista.children), i = itens.indexOf(lista.querySelector('.ativo'));
+    if (k === 'ArrowDown') { e.preventDefault(); selAtivar(sel, itens[Math.min(itens.length - 1, i + 1)]); }
+    else if (k === 'ArrowUp') { e.preventDefault(); selAtivar(sel, itens[Math.max(0, i - 1)]); }
+    else if (k === 'Home') { e.preventDefault(); selAtivar(sel, itens[0]); }
+    else if (k === 'End') { e.preventDefault(); selAtivar(sel, itens[itens.length - 1]); }
+    else if (k === 'Enter' || k === ' ') { e.preventDefault(); if (itens[i]) selEscolher(sel, itens[i]); }
+    else if (k === 'Escape') { e.preventDefault(); e.stopPropagation(); selAbrir(sel, false); sel.querySelector('.sel-btn').focus(); }
+    else if (k === 'Tab') selAbrir(sel, false);
+  }, true);
+  function opcoesFreq() {
+    var o = [];
+    for (var f = 1; f <= L.FREQ_MAX; f++) o.push({ valor: f, rotulo: rotuloFreq(f) });
+    return o;
   }
   function dicaFreq(f) {
     return f === 1 ? 'Você marca “Hoje eu fiz” todo dia. Pular um dia recomeça a sequência.'
@@ -214,7 +270,7 @@
     var parar = c.tipo === 'parar';
     return '<form class="editform" data-form="editar" data-id="' + esc(c.id) + '" novalidate>' +
       '<div class="field"><label for="en-' + esc(c.id) + '">Nome</label><input id="en-' + esc(c.id) + '" type="text" maxlength="60" value="' + esc(c.nome) + '"></div>' +
-      (!parar ? '<div class="field"><label for="ef-' + esc(c.id) + '">Com que frequência</label><select id="ef-' + esc(c.id) + '">' + opcoesFreq(c.frequencia || 1) + '</select></div>' : '') +
+      (!parar ? '<div class="field"><span class="rotulo" id="efr-' + esc(c.id) + '">Com que frequência</span>' + seletorHTML('ef-' + c.id, 'efr-' + c.id, opcoesFreq(), c.frequencia || 1) + '</div>' : '') +
       (parar ? '<div class="row2"><div class="field"><label for="ed-' + esc(c.id) + '">Data de início</label><input id="ed-' + esc(c.id) + '" type="date" max="' + hoje() + '" value="' + L.dataLocal(c.inicio) + '"></div>' +
         '<div class="field"><label for="et-' + esc(c.id) + '">Hora</label><input id="et-' + esc(c.id) + '" type="time" value="' + toTimeInput(c.inicio) + '"></div></div>' +
         '<div class="field"><label for="ec-' + esc(c.id) + '">Custo por dia (opcional)</label><input id="ec-' + esc(c.id) + '" type="text" inputmode="decimal" value="' + (c.custoDia ? String(c.custoDia).replace('.', ',') : '') + '"></div>' : '') +
@@ -322,7 +378,7 @@
     document.getElementById('f-date').value = L.dataLocal(agora);
     document.getElementById('f-time').value = toTimeInput(agora);
     document.getElementById('f-custo').value = '';
-    document.getElementById('f-freq').innerHTML = opcoesFreq(1);
+    document.getElementById('f-freq-sel').innerHTML = seletorHTML('f-freq', 'f-freq-rotulo', opcoesFreq(), 1);
     document.getElementById('f-freq-dica').textContent = dicaFreq(1);
     document.getElementById('f-error').textContent = '';
     ajustarFormulario();
@@ -559,7 +615,7 @@
   });
 
   document.querySelectorAll('input[name="f-tipo"]').forEach(function (r) { r.addEventListener('change', ajustarFormulario); });
-  document.getElementById('f-freq').addEventListener('change', function () { document.getElementById('f-freq-dica').textContent = dicaFreq(Number(this.value)); });
+  document.getElementById('f-freq-sel').addEventListener('change', function (e) { document.getElementById('f-freq-dica').textContent = dicaFreq(Number(e.target.value)); });
 
   document.getElementById('new-form').addEventListener('submit', function (e) {
     e.preventDefault();

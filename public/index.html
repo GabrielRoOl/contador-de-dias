@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#E4ECF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#050912" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="app.css?v=38">
+<link rel="stylesheet" href="app.css?v=39">
 <script>try{var p=JSON.parse(localStorage.getItem('contagem-de-dias:v2')).preferencias,r=document.documentElement;if(p.visual)r.setAttribute('data-visual',p.visual);if(p.modo==='claro')r.setAttribute('data-theme','light');else if(p.modo==='escuro')r.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
@@ -165,8 +165,8 @@
       <p class="hint">Com o valor, o app mostra quanto você já economizou.</p>
     </div>
     <div class="field" data-so="manter" hidden>
-      <label for="f-freq">Com que frequência</label>
-      <select id="f-freq"></select>
+      <span class="rotulo" id="f-freq-rotulo">Com que frequência</span>
+      <div id="f-freq-sel"></div>
       <p class="hint" id="f-freq-dica">Você marca &ldquo;Hoje eu fiz&rdquo; todo dia. Pular um dia recomeça a sequência.</p>
     </div>
     <p class="error" id="f-error" role="alert"></p>
@@ -295,12 +295,12 @@
   </div>
 </dialog>
 
-<script src="logica.js?v=38"></script>
-<script src="textos.js?v=38"></script>
-<script src="pomodoro.js?v=38"></script>
-<script src="cronograma.js?v=38"></script>
-<script src="armazem.js?v=38"></script>
-<script src="sincronia.js?v=38"></script>
-<script src="app.js?v=38"></script>
+<script src="logica.js?v=39"></script>
+<script src="textos.js?v=39"></script>
+<script src="pomodoro.js?v=39"></script>
+<script src="cronograma.js?v=39"></script>
+<script src="armazem.js?v=39"></script>
+<script src="sincronia.js?v=39"></script>
+<script src="app.js?v=39"></script>
 </body>
 </html>
